@@ -1,0 +1,651 @@
+schema_version: "1.0"
+source:
+  author: "Anupama Garani"
+  year: 2026
+  title: "A Systematic Taxonomy of Failure Modes in Retrieval-Augmented Generation Systems"
+  venue: "TrustNLP 2026"
+  doi: "10.18653/v1/2026.trustnlp-main.27"
+  url: "https://aclanthology.org/2026.trustnlp-main.27/"
+  bibtex: |
+    @inproceedings{garani-2026-taxonomy,
+      title     = {A Systematic Taxonomy of Failure Modes in Retrieval-Augmented Generation Systems},
+      author    = {Garani, Anupama},
+      booktitle = {Proceedings of the 6th Workshop on Trustworthy Natural Language Processing (TrustNLP 2026)},
+      year      = {2026},
+      doi       = {10.18653/v1/2026.trustnlp-main.27},
+      url       = {https://aclanthology.org/2026.trustnlp-main.27/},
+    }
+
+failure_modes:
+
+  # ---- Stage 1: Ingestion (F1–F4) ----
+
+  - id: F1
+    stage: ingestion
+    name: "Outdated/Stale Data"
+    definition: >
+      The knowledge base contains documents that are no longer current,
+      causing responses based on obsolete information.
+    observable_manifestation: >
+      Stale data reduces accuracy and can mislead models into generating harmful
+      outputs even when current information is available.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: proxy
+    detector_ids: []
+
+  - id: F2
+    stage: ingestion
+    name: "Missing/Incomplete Documents"
+    definition: >
+      The knowledge base lacks comprehensive domain coverage, creating gaps where
+      relevant information does not exist in the retrieval corpus.
+    observable_manifestation: >
+      RAG systems are unexpectedly sensitive to scenarios where relevant content
+      is systematically absent; distinct from F22 which concerns performance
+      decline when documents exist but were optimised for a different domain.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F3
+    stage: ingestion
+    name: "Layout Parsing Errors"
+    definition: >
+      Documents with heterogeneous layouts (tables, figures, multi-column text,
+      equations) resist uniform processing.
+    observable_manifestation: >
+      Layout-unaware methods fail to retrieve correct elements from complex
+      documents; explicit structural awareness significantly improves evidence
+      acquisition over treating passages as isolated chunks.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: direct
+    detector_ids: []
+
+  - id: F4
+    stage: ingestion
+    name: "Multimodality Conversion Loss"
+    definition: >
+      Information conveyed through non-text modalities (images, diagrams, charts)
+      is lost when documents are converted to text-only format.
+    observable_manifestation: >
+      Performance varies significantly with document complexity; OCR errors
+      cascade through RAG pipelines, compounding retrieval and generation failures.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: risk_signal
+    detector_ids: []
+
+  # ---- Stage 2: Representation (F5–F6) ----
+
+  - id: F5
+    stage: representation
+    name: "Tokenization Fragmentation"
+    definition: >
+      Tokenizers split semantically meaningful domain-specific units (medical terms,
+      abbreviations, compound words) into subword fragments, degrading embedding
+      coherence.
+    observable_manifestation: >
+      Tokenizer fragmentation is a dominant bottleneck for non-English text;
+      replacing fragmented sequences with semantic slots can improve recall-at-1
+      from 0.104 to 0.430.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F6
+    stage: representation
+    name: "Embedding Drift / Model Mismatch"
+    definition: >
+      Vector embeddings become inconsistent over time as models are updated, or
+      different tokenizers between retrieval encoder and generation model cause
+      misalignment at the retrieval-generation interface.
+    observable_manifestation: >
+      Representation shifts can silently erode retrieval quality, leading to
+      cascading failures that standard generation-focused evaluations fail to surface.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  # ---- Stage 3: Retrieval (F7–F12) ----
+
+  - id: F7
+    stage: retrieval
+    name: "Chunking Boundary Errors"
+    definition: >
+      Documents are segmented into chunks that break semantic coherence or split
+      critical information across boundaries.
+    observable_manifestation: >
+      Poor chunking caps quality and degrades faithfulness; adaptive chunking
+      achieves retrieval precision of 0.50 vs. 0.17 for fixed-length baselines;
+      underchunking and overchunking are distinct error types with different
+      mitigation strategies.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: direct
+    detector_ids: []
+
+  - id: F8
+    stage: retrieval
+    name: "Domain Embedding Mismatch"
+    definition: >
+      General-purpose embedding models fail to capture domain-specific semantic
+      relationships.
+    observable_manifestation: >
+      Domain adaptation significantly improves retrieval-augmented QA; no
+      correlation exists between general-benchmark and financial-benchmark
+      embedding performance.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F9
+    stage: retrieval
+    name: "Multi-Hop Reasoning Gaps"
+    definition: >
+      Queries requiring connections across multiple documents are not served by
+      single-step retrieval.
+    observable_manifestation: >
+      Multi-hop planning achieves up to 76.78% higher answer accuracy on
+      multi-hop benchmarks, with EM gains of 15–30 points over non-planning
+      baselines.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F10
+    stage: retrieval
+    name: "Graph RAG Trade-offs"
+    definition: >
+      Knowledge graph structures for retrieval introduce complexity-coverage
+      trade-offs.
+    observable_manifestation: >
+      Structural coherence reduces content coverage; graph-based RAG methods
+      sacrifice recall for higher precision.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F11
+    stage: retrieval
+    name: "Low Recall / Ranking Failures"
+    definition: >
+      Relevant documents exist but rank below the top-k cutoff or are not
+      retrieved at all.
+    observable_manifestation: >
+      Missed retrieval is a distinct error type that accounts for a significant
+      proportion of errors in empirical analysis.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: proxy
+    detector_ids: []
+
+  - id: F12
+    stage: retrieval
+    name: "Position-of-Gold Bias"
+    definition: >
+      LLMs disproportionately attend to retrieved documents based on context
+      position rather than relevance, exhibiting U-shaped attention that ignores
+      middle-placed content.
+    observable_manifestation: >
+      Position-aware reordering reduces LLM queries by up to 65% and yields 34%
+      accuracy gains on 400-fact contexts.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  # ---- Stage 4: Generation (F13–F17) ----
+
+  - id: F13
+    stage: generation
+    name: "Hallucination Despite Context"
+    definition: >
+      The generator produces claims not supported by retrieved documents despite
+      having relevant context available.
+    observable_manifestation: >
+      The most extensively studied RAG failure; decomposed into content
+      fabrication, parameter override, and context misalignment subtypes.
+      Distinct from F30 (Recursive Hallucination Cascades) which describes
+      agentic multi-step amplification.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F14
+    stage: generation
+    name: "Conflicting Information Unresolved"
+    definition: >
+      Retrieved documents contain contradictory information and the generator
+      fails to resolve or acknowledge the conflict.
+    observable_manifestation: >
+      Generators struggle to resolve contradictions; robustness under conflicting
+      information conditions can be evaluated via the RGB benchmark.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F15
+    stage: generation
+    name: "Incomplete / Partial Answers"
+    definition: >
+      Responses address only part of the query, missing relevant information
+      available in retrieved context.
+    observable_manifestation: >
+      Identified as one of seven primary failure points; incomplete answers
+      constitute a distinct generation error type.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F16
+    stage: generation
+    name: "Incorrect Specificity"
+    definition: >
+      Responses are too general or too specific relative to query intent.
+    observable_manifestation: >
+      Identified as a failure point; not yet isolated with granularity-specific
+      metrics.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F17
+    stage: generation
+    name: "Wrong Output Format"
+    definition: >
+      The response does not conform to required structural constraints (e.g., JSON
+      schema, tabular format, citation template), even when the retrieved content
+      is correct.
+    observable_manifestation: >
+      Structural non-compliance can break downstream parsing or tool-invocation
+      components; semantic accuracy may be preserved while structural requirements
+      are violated.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  # ---- Stage 5: Evaluation (F18–F19) ----
+
+  - id: F18
+    stage: evaluation
+    name: "Metric Inadequacy"
+    definition: >
+      Standard metrics (BLEU, ROUGE, exact match) fail to capture generation
+      quality, faithfulness, or utility.
+    observable_manifestation: >
+      Fine-grained RAG-specific metrics show significantly better correlation with
+      human judgments than prior metrics; comprehensive multi-metric evaluation
+      is required.
+    evidence_level: Strong
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: unsupported
+    detector_ids: []
+
+  - id: F19
+    stage: evaluation
+    name: "Lack of Continuous Monitoring"
+    definition: >
+      Systems are evaluated at development time but lack production monitoring,
+      causing silent quality degradation as data and models evolve.
+    observable_manifestation: >
+      Emerging concern in RAG operations literature; quality drift goes undetected
+      without production-time evaluation infrastructure.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  # ---- Stage 6: Deployment (F20–F25) ----
+
+  - id: F20
+    stage: deployment
+    name: "Latency / Cost Bottlenecks"
+    definition: >
+      End-to-end RAG latency exceeds acceptable thresholds, or improving quality
+      requires disproportionate cost increases.
+    observable_manifestation: >
+      Empirical accuracy-latency trade-offs between large and small LLMs; edge
+      deployment requires special latency mitigation. Distinct from F31
+      (Unbounded Cost/Latency Spirals) which concerns agentic recursive growth.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F21
+    stage: deployment
+    name: "Auditability Gaps"
+    definition: >
+      RAG systems lack sufficient logging and tracing to verify which documents
+      influenced specific outputs.
+    observable_manifestation: >
+      System-level logging infrastructure deficiency; distinct from F33
+      (Attribution and Governance Gaps) which concerns semantic attribution
+      across multi-step reasoning chains.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F22
+    stage: deployment
+    name: "Domain Portability Degradation"
+    definition: >
+      RAG systems optimised for one domain show significant degradation in other
+      domains.
+    observable_manifestation: >
+      Domain adaptation is widely studied but portability failures are not
+      isolated as a distinct RAG failure mode; conceptually distinct from F2
+      (Missing/Incomplete Documents).
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F23
+    stage: deployment
+    name: "PII / Compliance Leaks"
+    definition: >
+      Retrieved documents or generated responses expose personally identifiable
+      or regulated data.
+    observable_manifestation: >
+      Content-level exposure of sensitive data; distinct from F25 which concerns
+      policy-layer failures where access rules are not enforced even when content
+      is not inherently sensitive.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: risk_signal
+    detector_ids: []
+
+  - id: F24
+    stage: deployment
+    name: "Prompt Sensitivity"
+    definition: >
+      Small prompt variations cause significant performance changes.
+    observable_manifestation: >
+      Discrepant responses across models under minimal prompt variation; prompt
+      variations significantly impact LLM relevance judgments.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F25
+    stage: deployment
+    name: "Authorization / Policy Enforcement Failures"
+    definition: >
+      Retrieved or generated outputs violate role-based access controls despite
+      technically correct retrieval and generation.
+    observable_manifestation: >
+      Authorization enforcement is a primary retrieval-layer risk; authorization
+      gaps are a recurring compliance failure pattern; distinct from F23 which
+      concerns content-level exposure.
+    evidence_level: Moderate
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  # ---- Stage 7: Agentic Orchestration (F26–F33) ----
+  # All 8 agentic modes lack peer-reviewed benchmarks (Limited evidence)
+
+  - id: F26
+    stage: agentic_orchestration
+    name: "Planning Failures"
+    definition: >
+      Agents generate plans that are overly complex, overly simplistic, or
+      circular.
+    observable_manifestation: >
+      Single-agent planning quality failures; distinct from F29 (Multi-Agent
+      Coordination Failures) which concerns inter-agent orchestration.
+      Measurable proxy: plan length vs. query complexity.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F27
+    stage: agentic_orchestration
+    name: "Tool Selection and Execution Errors"
+    definition: >
+      Agents choose inappropriate tools, provide malformed parameters, or fail
+      to handle tool timeouts and non-deterministic outputs.
+    observable_manifestation: >
+      Correctness of individual tool calls (selection, parameters, error
+      handling); distinct from F31 (Unbounded Cost/Latency Spirals) which
+      concerns boundedness of tool-call sequences.
+      Measurable proxy: tool error rate.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F28
+    stage: agentic_orchestration
+    name: "Context Memory Degradation"
+    definition: >
+      Agents lose prior context (forgetting), over-rely on stale cache, or allow
+      context leakage across queries.
+    observable_manifestation: >
+      Measurable proxy: context staleness score.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F29
+    stage: agentic_orchestration
+    name: "Multi-Agent Coordination Failures"
+    definition: >
+      Orchestrators enter deadlocks, agents produce contradictory outputs, or
+      coordination overhead exceeds parallelism benefit.
+    observable_manifestation: >
+      Measurable proxy: output agreement rate across agents.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F30
+    stage: agentic_orchestration
+    name: "Recursive Hallucination Cascades"
+    definition: >
+      Hallucinated intermediate results trigger subsequent queries based on
+      fabrications, creating cascading chains of increasingly fabricated
+      information.
+    observable_manifestation: >
+      Recursive hallucination is a distinct failure mode in agentic RAG loops;
+      distinct from F13 (single-turn Hallucination Despite Context).
+      Measurable proxy: hallucination rate per reasoning depth.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F31
+    stage: agentic_orchestration
+    name: "Unbounded Cost / Latency Spirals"
+    definition: >
+      Agentic workflows lack guardrails on execution depth, allowing cascading
+      costs through recursive tool calls and retrieval operations.
+    observable_manifestation: >
+      Distinct from F20 (steady-state Latency/Cost Bottlenecks) which concerns
+      expected load. Measurable proxy: cost-per-query variance.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F32
+    stage: agentic_orchestration
+    name: "Unsafe Reasoning Chains"
+    definition: >
+      Multi-step reasoning produces harmful outputs through individually innocuous
+      steps, where the composite action violates safety constraints not visible at
+      any single step.
+    observable_manifestation: >
+      Measurable proxy: safety constraint satisfaction at composite vs. step level.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []
+
+  - id: F33
+    stage: agentic_orchestration
+    name: "Attribution and Governance Gaps"
+    definition: >
+      Agents fail to trace generated claims back to source documents across
+      multi-step workflows, and collectively breach compliance regulations despite
+      individually compliant actions.
+    observable_manifestation: >
+      Concerns semantic attribution across multi-step reasoning chains; distinct
+      from F21 (Auditability Gaps) which concerns system-level logging
+      infrastructure. Measurable proxy: attribution coverage rate.
+    evidence_level: Limited
+    source:
+      author: "Anupama Garani"
+      year: 2026
+      venue: "TrustNLP 2026"
+      doi: "10.18653/v1/2026.trustnlp-main.27"
+    detector_status: runtime_required
+    detector_ids: []

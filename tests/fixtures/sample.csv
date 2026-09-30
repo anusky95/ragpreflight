@@ -1,0 +1,11 @@
+id,name,description,category,score
+1,Document A,A well-structured PDF with good metadata,pdf,92
+2,Document B,A scanned PDF with OCR errors,pdf,34
+3,Document C,A clean DOCX with proper headings,docx,87
+4,Document D,An empty file with no content,txt,0
+5,Document E,A markdown file with broken links,markdown,65
+6,Document F,A CSV with inconsistent columns,csv,45
+7,Document G,An HTML page with lots of boilerplate,html,52
+8,Document H,A high-quality research paper,pdf,95
+9,Document I,A duplicate of Document A,pdf,91
+10,Document J,An outdated document from 2019,docx,70

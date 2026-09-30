@@ -1,0 +1,6 @@
+name,age,city,country
+Alice,30,New York,USA
+Bob,25,London
+Charlie,35,Paris,France,Extra
+Diana,,Berlin,Germany
+Eve,28,Tokyo,Japan

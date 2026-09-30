@@ -1,0 +1,15 @@
+1
+00:00:01,000 --> 00:00:04,000
+Welcome to the RAG pipeline quality workshop.
+
+2
+00:00:05,000 --> 00:00:09,000
+Today we will learn how document quality affects retrieval accuracy.
+
+3
+00:00:10,000 --> 00:00:14,000
+Poor OCR and encoding issues are the leading causes of hallucinations.
+
+4
+00:00:15,000 --> 00:00:20,000
+RAGCheck scans your documents before embedding so you catch problems early.

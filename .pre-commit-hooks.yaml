@@ -1,0 +1,19 @@
+- id: ragpreflight-scan
+  name: ragpreflight — document readiness scan
+  description: Scan staged documents for RAG quality issues before they enter the corpus.
+  language: python
+  entry: ragpreflight score
+  types_or: [pdf, file]
+  args: []
+  pass_filenames: true
+  stages: [pre-commit]
+
+- id: ragpreflight-scan-strict
+  name: ragpreflight — strict document readiness scan
+  description: Fail the commit if any document scores below the strict profile threshold.
+  language: python
+  entry: ragpreflight scan
+  types_or: [pdf, file]
+  args: [--profile, strict, --quiet]
+  pass_filenames: true
+  stages: [pre-commit]

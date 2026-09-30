@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vector Databases Explained</title>
+<meta name="description" content="A comprehensive guide to vector databases and their use in AI applications.">
+</head>
+<body>
+<nav><a href="/">Home</a> | <a href="/docs">Docs</a></nav>
+<header><h1>Vector Databases Explained</h1></header>
+<main>
+<article>
+<h2>What is a Vector Database?</h2>
+<p>A vector database is a type of database that stores data as high-dimensional vectors — mathematical representations of data points in a multi-dimensional space.</p>
+
+<h2>Why Vector Databases Matter for AI</h2>
+<p>Traditional databases store and retrieve data using exact matches or range queries. Vector databases, in contrast, are designed to find semantically similar items using approximate nearest neighbor search.</p>
+
+<h3>Key Features</h3>
+<ul>
+<li>High-dimensional similarity search</li>
+<li>Efficient indexing (HNSW, IVF, PQ)</li>
+<li>Scalable to billions of vectors</li>
+<li>Integration with ML pipelines</li>
+</ul>
+
+<h2>Popular Vector Databases</h2>
+<p>Several vector databases have emerged to support AI applications:</p>
+<ul>
+<li><strong>Pinecone</strong>: Managed, cloud-native vector database</li>
+<li><strong>Weaviate</strong>: Open-source with GraphQL API</li>
+<li><strong>Chroma</strong>: Simple, developer-friendly</li>
+<li><strong>Qdrant</strong>: Rust-based, high performance</li>
+<li><strong>pgvector</strong>: PostgreSQL extension for vectors</li>
+</ul>
+
+<h2>How Similarity Search Works</h2>
+<p>Given a query vector, the database finds the k vectors most similar to the query using distance metrics like cosine similarity, Euclidean distance, or dot product.</p>
+
+<p>The challenge is efficiency: searching through millions of vectors naively is too slow. Indexing algorithms like HNSW (Hierarchical Navigable Small World) make this tractable by creating graph-based approximations.</p>
+
+<h2>Use Cases</h2>
+<p>Vector databases power many AI applications:</p>
+<ol>
+<li>Semantic search</li>
+<li>Recommendation systems</li>
+<li>RAG (Retrieval-Augmented Generation)</li>
+<li>Anomaly detection</li>
+<li>Image and video retrieval</li>
+</ol>
+</article>
+</main>
+<footer><p>© 2024 AI Documentation</p></footer>
+</body>
+</html>
