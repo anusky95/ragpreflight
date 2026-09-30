@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 
 class Severity(str, Enum):
@@ -50,8 +50,8 @@ class TaxonomyReference:
     relationship: Literal["direct", "proxy", "risk_signal"]
     mode_name: str = ""
     definition: str = ""
-    confidence: Optional[float] = None
-    explanation: Optional[str] = None
+    confidence: float | None = None
+    explanation: str | None = None
 
 
 @dataclass
@@ -71,9 +71,9 @@ class Issue:
     category: IssueCategory
     severity: Severity
     message: str
-    location: Optional[str] = None
-    suggestion: Optional[str] = None
-    context: Optional[str] = None
+    location: str | None = None
+    suggestion: str | None = None
+    context: str | None = None
     taxonomy_refs: list[TaxonomyReference] = field(default_factory=list)
 
     def __str__(self) -> str:
@@ -175,7 +175,7 @@ class ChunkReport:
 
     chunk_index: int
     text_preview: str
-    coherence_score: Optional[float]
+    coherence_score: float | None
     coherence_status: str = "not_evaluated"
     issues: list[Issue] = field(default_factory=list)
 
@@ -184,7 +184,9 @@ class ChunkReport:
         return {
             "chunk_index": self.chunk_index,
             "text_preview": self.text_preview,
-            "coherence_score": round(self.coherence_score, 4) if self.coherence_score is not None else None,
+            "coherence_score": round(self.coherence_score, 4)
+            if self.coherence_score is not None
+            else None,
             "coherence_status": self.coherence_status,
             "issues": [_issue_to_dict(i) for i in self.issues],
         }

@@ -15,12 +15,13 @@ def _load_yaml(text: str) -> Any:
     """Parse YAML text without importing yaml at module level."""
     try:
         import yaml  # type: ignore[import]
+
         return yaml.safe_load(text)
     except ImportError:
         import tomllib  # noqa: F401 — tomllib is stdlib in 3.11+
+
         raise ImportError(
-            "PyYAML is required to load the taxonomy. "
-            "Install with: pip install pyyaml"
+            "PyYAML is required to load the taxonomy. Install with: pip install pyyaml"
         ) from None
 
 
@@ -32,6 +33,7 @@ def _read_taxonomy_yaml() -> str:
     except Exception:
         # Fallback: resolve relative to this file
         import os
+
         here = os.path.dirname(__file__)
         with open(os.path.join(here, _YAML_FILENAME), encoding="utf-8") as f:
             return f.read()

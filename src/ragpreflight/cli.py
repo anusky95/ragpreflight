@@ -14,7 +14,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -64,6 +63,7 @@ def main(ctx: click.Context, verbose: bool) -> None:
 # ragpreflight scan
 # ---------------------------------------------------------------------------
 
+
 @main.command("scan")
 @click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
 @click.option(
@@ -83,7 +83,12 @@ def main(ctx: click.Context, verbose: bool) -> None:
     show_default=True,
     help="Output format.",
 )
-@click.option("--output", "-o", default=None, help="Write output to this file (for --format html/json/sarif).")
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    help="Write output to this file (for --format html/json/sarif).",
+)
 @click.option("--max-size", default=100.0, show_default=True, help="Max file size in MB.")
 @click.pass_context
 def cmd_scan(
@@ -93,7 +98,7 @@ def cmd_scan(
     output_json: bool,
     quiet: bool,
     output_format: str,
-    output: Optional[str],
+    output: str | None,
     max_size: float,
 ) -> None:
     """Scan a single document and report its RAG readiness score.
@@ -104,9 +109,9 @@ def cmd_scan(
         ragpreflight scan document.pdf --profile strict --json
         ragpreflight scan document.pdf --format html --output report.html
     """
-    from ragpreflight.scanner import scan_document
-    from ragpreflight.report import render_document_report
     from ragpreflight.profiles import get_profile
+    from ragpreflight.report import render_document_report
+    from ragpreflight.scanner import scan_document
 
     # Apply config file defaults (CLI flags take precedence via Click defaults)
     cfg = (ctx.obj or {}).get("config", {})
@@ -120,14 +125,14 @@ def cmd_scan(
     try:
         get_profile(profile)
     except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile")
+        raise click.BadParameter(str(exc), param_hint="--profile") from exc
 
     try:
         report = scan_document(filepath, max_file_size_mb=max_size)
     except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
     except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}")
+        raise click.ClickException(f"Unexpected error: {exc}") from exc
 
     fmt = "json" if output_json else output_format
     render_document_report(report, fmt=fmt, output=output, quiet=quiet)
@@ -140,6 +145,7 @@ def cmd_scan(
 # ---------------------------------------------------------------------------
 # ragpreflight audit
 # ---------------------------------------------------------------------------
+
 
 @main.command("audit")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
@@ -162,10 +168,27 @@ def cmd_scan(
 )
 @click.option("--output", "-o", default=None, help="Write output to this file.")
 @click.option("--no-progress", is_flag=True, default=False, help="Disable progress bar.")
-@click.option("--no-parallel", is_flag=True, default=False, help="Disable parallel scanning (scan sequentially).")
-@click.option("--workers", default=4, show_default=True, help="Thread pool size for parallel scanning.")
-@click.option("--cache", is_flag=True, default=False, help="Cache scan results; re-use on unchanged files (incremental).")
-@click.option("--contradictions", is_flag=True, default=False, help="Detect documents covering the same topic (requires ragpreflight[full]).")
+@click.option(
+    "--no-parallel",
+    is_flag=True,
+    default=False,
+    help="Disable parallel scanning (scan sequentially).",
+)
+@click.option(
+    "--workers", default=4, show_default=True, help="Thread pool size for parallel scanning."
+)
+@click.option(
+    "--cache",
+    is_flag=True,
+    default=False,
+    help="Cache scan results; re-use on unchanged files (incremental).",
+)
+@click.option(
+    "--contradictions",
+    is_flag=True,
+    default=False,
+    help="Detect documents covering the same topic (requires ragpreflight[full]).",
+)
 @click.pass_context
 def cmd_audit(
     ctx: click.Context,
@@ -174,7 +197,7 @@ def cmd_audit(
     output_json: bool,
     quiet: bool,
     output_format: str,
-    output: Optional[str],
+    output: str | None,
     no_progress: bool,
     no_parallel: bool,
     workers: int,
@@ -190,8 +213,8 @@ def cmd_audit(
         ragpreflight audit ./knowledge_base/ --format html --output report.html
     """
     from ragpreflight.corpus import audit_corpus
-    from ragpreflight.report import render_corpus_report
     from ragpreflight.profiles import get_profile
+    from ragpreflight.report import render_corpus_report
 
     cfg = (ctx.obj or {}).get("config", {})
     if profile == "standard" and "profile" in cfg:
@@ -204,7 +227,7 @@ def cmd_audit(
     try:
         profile_data = get_profile(profile)
     except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile")
+        raise click.BadParameter(str(exc), param_hint="--profile") from exc
 
     try:
         report = audit_corpus(
@@ -217,9 +240,9 @@ def cmd_audit(
             detect_contradictions=contradictions,
         )
     except NotADirectoryError as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
     except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}")
+        raise click.ClickException(f"Unexpected error: {exc}") from exc
 
     fmt = "json" if output_json else output_format
     render_corpus_report(report, fmt=fmt, output=output, quiet=quiet)
@@ -232,6 +255,7 @@ def cmd_audit(
 # ---------------------------------------------------------------------------
 # ragpreflight chunks
 # ---------------------------------------------------------------------------
+
 
 @main.command("chunks")
 @click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
@@ -275,7 +299,7 @@ def cmd_chunks(
     try:
         profile_data = get_profile(profile)
     except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile")
+        raise click.BadParameter(str(exc), param_hint="--profile") from exc
 
     try:
         chunk_reports = analyze_chunks(
@@ -286,17 +310,17 @@ def cmd_chunks(
             profile=profile_data,
         )
     except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
     except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}")
+        raise click.ClickException(f"Unexpected error: {exc}") from exc
 
     if output_json:
         click.echo(json.dumps([r.to_dict() for r in chunk_reports], indent=2))
         return
 
+    from rich import box
     from rich.console import Console
     from rich.table import Table
-    from rich import box
 
     console = Console()
     console.print(f"\n[bold]Chunk Analysis — {Path(filepath).name}[/bold]")
@@ -317,7 +341,13 @@ def cmd_chunks(
         if r.coherence_score is None:
             coh_display = "[dim]n/a[/dim]"
         else:
-            coh_colour = "green" if r.coherence_score >= 0.65 else "yellow" if r.coherence_score >= 0.4 else "red"
+            coh_colour = (
+                "green"
+                if r.coherence_score >= 0.65
+                else "yellow"
+                if r.coherence_score >= 0.4
+                else "red"
+            )
             coh_display = f"[{coh_colour}]{r.coherence_score:.2f}[/{coh_colour}]"
         table.add_row(
             str(r.chunk_index),
@@ -332,13 +362,17 @@ def cmd_chunks(
         if r.issues:
             for issue in r.issues:
                 from ragpreflight._constants import SEVERITY_COLOURS
+
                 colour = SEVERITY_COLOURS.get(issue.severity.value, "white")
-                console.print(f"  [{colour}]{issue.severity.value.upper()}[/{colour}]  {issue.message}")
+                console.print(
+                    f"  [{colour}]{issue.severity.value.upper()}[/{colour}]  {issue.message}"
+                )
 
 
 # ---------------------------------------------------------------------------
 # ragpreflight simulate
 # ---------------------------------------------------------------------------
+
 
 @main.command("simulate")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
@@ -391,7 +425,7 @@ def cmd_simulate(
             llm_model=llm_model,
         )
     except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}")
+        raise click.ClickException(f"Unexpected error: {exc}") from exc
 
     if "error" in result:
         raise click.ClickException(result["error"])
@@ -430,6 +464,7 @@ def cmd_simulate(
 # ragpreflight score
 # ---------------------------------------------------------------------------
 
+
 @main.command("score")
 @click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
 @click.option("--max-size", default=100.0, show_default=True, help="Max file size in MB.")
@@ -449,9 +484,9 @@ def cmd_score(filepath: str, max_size: float) -> None:
     try:
         report = scan_document(filepath, max_file_size_mb=max_size)
     except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
     except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}")
+        raise click.ClickException(f"Unexpected error: {exc}") from exc
 
     click.echo(report.score)
 
@@ -459,6 +494,7 @@ def cmd_score(filepath: str, max_size: float) -> None:
 # ---------------------------------------------------------------------------
 # ragpreflight taxonomy
 # ---------------------------------------------------------------------------
+
 
 @main.group("taxonomy")
 def cmd_taxonomy() -> None:
@@ -476,13 +512,14 @@ def cmd_taxonomy() -> None:
 @cmd_taxonomy.command("list")
 @click.option("--stage", default=None, help="Filter by pipeline stage.")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
-def cmd_taxonomy_list(stage: Optional[str], as_json: bool) -> None:
+def cmd_taxonomy_list(stage: str | None, as_json: bool) -> None:
     """List all 33 failure modes (or filter by stage)."""
     import json as _json
-    from ragpreflight.taxonomy import list_failure_modes, modes_by_stage
 
     from rich.console import Console
     from rich.table import Table
+
+    from ragpreflight.taxonomy import list_failure_modes, modes_by_stage
 
     console = Console()
     modes = modes_by_stage(stage) if stage else list_failure_modes()
@@ -508,8 +545,8 @@ def cmd_taxonomy_list(stage: Optional[str], as_json: bool) -> None:
     table.add_column("Evidence", width=10)
     table.add_column("Coverage", width=16)
 
-    _EVIDENCE_COLOUR = {"Strong": "green", "Moderate": "yellow", "Limited": "red"}
-    _STATUS_COLOUR = {
+    evidence_colour = {"Strong": "green", "Moderate": "yellow", "Limited": "red"}
+    status_colour = {
         "direct": "green",
         "proxy": "yellow",
         "risk_signal": "yellow",
@@ -518,8 +555,8 @@ def cmd_taxonomy_list(stage: Optional[str], as_json: bool) -> None:
     }
 
     for m in modes:
-        ev_col = _EVIDENCE_COLOUR.get(m.evidence_level, "white")
-        st_col = _STATUS_COLOUR.get(m.detector_status, "white")
+        ev_col = evidence_colour.get(m.evidence_level, "white")
+        st_col = status_colour.get(m.detector_status, "white")
         table.add_row(
             m.id,
             m.stage.replace("_", " "),
@@ -528,9 +565,7 @@ def cmd_taxonomy_list(stage: Optional[str], as_json: bool) -> None:
             f"[{st_col}]{m.detector_status}[/{st_col}]",
         )
     console.print(table)
-    console.print(
-        "\n[dim]Source: Garani 2026 · doi:10.18653/v1/2026.trustnlp-main.27[/dim]"
-    )
+    console.print("\n[dim]Source: Garani 2026 · doi:10.18653/v1/2026.trustnlp-main.27[/dim]")
 
 
 @cmd_taxonomy.command("show")
@@ -539,27 +574,34 @@ def cmd_taxonomy_list(stage: Optional[str], as_json: bool) -> None:
 def cmd_taxonomy_show(mode_id: str, as_json: bool) -> None:
     """Show full detail for one failure mode (e.g. F7)."""
     import json as _json
-    from ragpreflight.taxonomy import get_failure_mode
 
     from rich.console import Console
+
+    from ragpreflight.taxonomy import get_failure_mode
+
     console = Console()
 
     try:
         m = get_failure_mode(mode_id)
     except KeyError as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
 
     if as_json:
-        click.echo(_json.dumps({
-            "id": m.id,
-            "stage": m.stage,
-            "name": m.name,
-            "definition": m.definition,
-            "observable_manifestation": m.observable_manifestation,
-            "evidence_level": m.evidence_level,
-            "detector_status": m.detector_status,
-            "source": {"doi": m.source.doi, "url": m.source.url},
-        }, indent=2))
+        click.echo(
+            _json.dumps(
+                {
+                    "id": m.id,
+                    "stage": m.stage,
+                    "name": m.name,
+                    "definition": m.definition,
+                    "observable_manifestation": m.observable_manifestation,
+                    "evidence_level": m.evidence_level,
+                    "detector_status": m.detector_status,
+                    "source": {"doi": m.source.doi, "url": m.source.url},
+                },
+                indent=2,
+            )
+        )
         return
 
     console.print(f"\n[bold cyan]{m.id}  {m.name}[/bold cyan]")
@@ -578,6 +620,7 @@ def cmd_taxonomy_show(mode_id: str, as_json: bool) -> None:
 # ragpreflight coverage
 # ---------------------------------------------------------------------------
 
+
 @main.command("coverage")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def cmd_coverage(as_json: bool) -> None:
@@ -589,32 +632,47 @@ def cmd_coverage(as_json: bool) -> None:
         ragpreflight coverage --json
     """
     import json as _json
-    from ragpreflight.taxonomy import detector_coverage
 
     from rich.console import Console
+
+    from ragpreflight.taxonomy import detector_coverage
+
     console = Console()
     cov = detector_coverage()
 
     if as_json:
-        click.echo(_json.dumps({
-            "direct": [m.id for m in cov.direct],
-            "proxy": [m.id for m in cov.proxy],
-            "risk_signal": [m.id for m in cov.risk_signal],
-            "runtime_required": [m.id for m in cov.runtime_required],
-            "unsupported": [m.id for m in cov.unsupported],
-            "total": cov.total,
-        }, indent=2))
+        click.echo(
+            _json.dumps(
+                {
+                    "direct": [m.id for m in cov.direct],
+                    "proxy": [m.id for m in cov.proxy],
+                    "risk_signal": [m.id for m in cov.risk_signal],
+                    "runtime_required": [m.id for m in cov.runtime_required],
+                    "unsupported": [m.id for m in cov.unsupported],
+                    "total": cov.total,
+                },
+                indent=2,
+            )
+        )
         return
 
     console.print("\n[bold]ragpreflight — Taxonomy Coverage (Garani 2026)[/bold]\n")
-    console.print(f"  [green]Direct assessment:[/green]  {len(cov.direct)} modes  "
-                  f"({', '.join(m.id for m in cov.direct) or '—'})")
-    console.print(f"  [yellow]Proxy signal:[/yellow]       {len(cov.proxy)} modes  "
-                  f"({', '.join(m.id for m in cov.proxy) or '—'})")
-    console.print(f"  [yellow]Risk signal only:[/yellow]   {len(cov.risk_signal)} modes  "
-                  f"({', '.join(m.id for m in cov.risk_signal) or '—'})")
-    console.print(f"  [dim]Runtime required:[/dim]   {len(cov.runtime_required)} modes  "
-                  f"(needs live system traces)")
+    console.print(
+        f"  [green]Direct assessment:[/green]  {len(cov.direct)} modes  "
+        f"({', '.join(m.id for m in cov.direct) or '—'})"
+    )
+    console.print(
+        f"  [yellow]Proxy signal:[/yellow]       {len(cov.proxy)} modes  "
+        f"({', '.join(m.id for m in cov.proxy) or '—'})"
+    )
+    console.print(
+        f"  [yellow]Risk signal only:[/yellow]   {len(cov.risk_signal)} modes  "
+        f"({', '.join(m.id for m in cov.risk_signal) or '—'})"
+    )
+    console.print(
+        f"  [dim]Runtime required:[/dim]   {len(cov.runtime_required)} modes  "
+        f"(needs live system traces)"
+    )
     console.print(f"  [dim]Not supported:[/dim]      {len(cov.unsupported)} modes")
     console.print(
         f"\n  [dim]Total: {cov.total} modes | Source: doi:10.18653/v1/2026.trustnlp-main.27[/dim]"

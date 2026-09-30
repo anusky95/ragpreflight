@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
@@ -20,9 +19,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Skip @pytest.mark.slow tests unless --slow is passed."""
     if not config.getoption("--slow", default=False):
         skip_slow = pytest.mark.skip(

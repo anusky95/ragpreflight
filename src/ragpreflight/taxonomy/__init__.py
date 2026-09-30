@@ -66,9 +66,7 @@ def get_failure_mode(mode_id: str) -> FailureMode:
         if mode.id == normalised:
             return mode
     valid = ", ".join(m.id for m in load_taxonomy())
-    raise KeyError(
-        f"Unknown failure mode '{mode_id}'. Valid IDs: {valid}"
-    )
+    raise KeyError(f"Unknown failure mode '{mode_id}'. Valid IDs: {valid}")
 
 
 def modes_by_stage(stage: str) -> list[FailureMode]:
@@ -87,7 +85,5 @@ def modes_by_stage(stage: str) -> list[FailureMode]:
     normalised = stage.lower().replace(" ", "_").replace("-", "_")
     if normalised not in _VALID_STAGES:
         valid = ", ".join(sorted(_VALID_STAGES))
-        raise ValueError(
-            f"Unknown stage '{stage}'. Valid stages: {valid}"
-        )
+        raise ValueError(f"Unknown stage '{stage}'. Valid stages: {valid}")
     return [m for m in load_taxonomy() if m.stage == normalised]

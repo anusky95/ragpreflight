@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 DetectorStatus = Literal["direct", "proxy", "risk_signal", "runtime_required", "unsupported"]
 
 

@@ -18,8 +18,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class RAGCheckLoader:
             raise ImportError(
                 "langchain-core is required for RAGCheckLoader. "
                 "Install it with: pip install langchain-core"
-            )
+            ) from None
 
         from ragpreflight import scan_document
 
@@ -104,19 +104,20 @@ class RAGCheckLoader:
         """Lazy load interface for LangChain compatibility."""
         yield from self.load()
 
-    def _load_content(self, Document: type, metadata: dict) -> Iterator:
+    def _load_content(self, doc_class: type, metadata: dict) -> Iterator:
         """Extract text and yield LangChain Documents."""
         suffix = self.file_path.suffix.lower()
 
         if suffix == ".pdf":
             try:
                 import pymupdf as fitz  # type: ignore[import]
+
                 doc = fitz.open(str(self.file_path))
                 for page_num in range(doc.page_count):
                     page_text = doc[page_num].get_text("text")
                     if page_text.strip():
                         page_meta = dict(metadata, page=page_num + 1)
-                        yield Document(page_content=page_text, metadata=page_meta)
+                        yield doc_class(page_content=page_text, metadata=page_meta)
                 doc.close()
                 return
             except ImportError:
@@ -125,7 +126,8 @@ class RAGCheckLoader:
         # Fallback: read as plain text
         try:
             from ragpreflight.utils import safe_read_text
+
             text, _ = safe_read_text(self.file_path)
-            yield Document(page_content=text, metadata=metadata)
+            yield doc_class(page_content=text, metadata=metadata)
         except Exception as exc:
             raise ValueError(f"Cannot read '{self.file_path}': {exc}") from exc

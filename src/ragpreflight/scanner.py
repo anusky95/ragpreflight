@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from ragpreflight._constants import (
     CONTROL_CHAR_PATTERN,
@@ -45,7 +45,6 @@ from ragpreflight.utils import (
     encoding_is_suspicious,
     is_supported,
     safe_read_text,
-    truncate_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,15 +75,21 @@ def _enrich_taxonomy_refs(issues: list[Issue]) -> list[Issue]:
         # Message-level overrides for issues whose category is too broad
         if issue.message.startswith("Possible PII"):
             mappings: list[tuple[str, str, str]] = [
-                ("F23", "direct",
-                 "PII in source documents directly causes PII/Compliance Leaks (F23) — "
-                 "retrieved chunks containing personal data may be surfaced to unauthorised users."),
+                (
+                    "F23",
+                    "direct",
+                    "PII in source documents directly causes PII/Compliance Leaks (F23) — "
+                    "retrieved chunks containing personal data may be surfaced to unauthorised users.",
+                ),
             ]
         elif issue.message.startswith("File size"):
             mappings = [
-                ("F3", "risk_signal",
-                 "Oversized files are a risk signal for Layout Parsing Errors (F3) — "
-                 "large files are more likely to contain complex layouts that parsers mis-handle."),
+                (
+                    "F3",
+                    "risk_signal",
+                    "Oversized files are a risk signal for Layout Parsing Errors (F3) — "
+                    "large files are more likely to contain complex layouts that parsers mis-handle.",
+                ),
             ]
         else:
             mappings = ISSUE_CATEGORY_TO_FCODE.get(category_key, [])
@@ -92,28 +97,34 @@ def _enrich_taxonomy_refs(issues: list[Issue]) -> list[Issue]:
         for mode_id, relationship, explanation in mappings:
             try:
                 mode = get_failure_mode(mode_id)
-                refs.append(TaxonomyReference(
-                    mode_id=mode_id,
-                    relationship=relationship,
-                    mode_name=mode.name,
-                    definition=mode.definition,
-                    explanation=explanation,
-                ))
+                refs.append(
+                    TaxonomyReference(
+                        mode_id=mode_id,
+                        relationship=relationship,
+                        mode_name=mode.name,
+                        definition=mode.definition,
+                        explanation=explanation,
+                    )
+                )
             except Exception:
-                refs.append(TaxonomyReference(
-                    mode_id=mode_id,
-                    relationship=relationship,
-                    explanation=explanation,
-                ))
-        enriched.append(Issue(
-            category=issue.category,
-            severity=issue.severity,
-            message=issue.message,
-            location=issue.location,
-            suggestion=issue.suggestion,
-            context=issue.context,
-            taxonomy_refs=refs,
-        ))
+                refs.append(
+                    TaxonomyReference(
+                        mode_id=mode_id,
+                        relationship=relationship,
+                        explanation=explanation,
+                    )
+                )
+        enriched.append(
+            Issue(
+                category=issue.category,
+                severity=issue.severity,
+                message=issue.message,
+                location=issue.location,
+                suggestion=issue.suggestion,
+                context=issue.context,
+                taxonomy_refs=refs,
+            )
+        )
     return enriched
 
 
@@ -144,15 +155,10 @@ def scan_document(
     path = Path(filepath).resolve()
 
     if not path.exists():
-        raise FileNotFoundError(
-            f"File not found: {filepath}\n"
-            f"Check the path and try again."
-        )
+        raise FileNotFoundError(f"File not found: {filepath}\nCheck the path and try again.")
 
     if path.is_dir():
-        raise ValueError(
-            f"'{filepath}' is a directory. Use audit_corpus() to scan directories."
-        )
+        raise ValueError(f"'{filepath}' is a directory. Use audit_corpus() to scan directories.")
 
     fmt = detect_file_format(path)
     if fmt == "unknown" or not is_supported(path):
@@ -435,7 +441,7 @@ def _scan_pdf(path: Path) -> _ScanResult:
     except ImportError:
         raise ImportError(
             "PyMuPDF is required for PDF scanning. Install it with: pip install pymupdf"
-        )
+        ) from None
 
     issues: list[Issue] = []
     page_texts: list[str] = []
@@ -585,9 +591,7 @@ def _score_pdf_metadata(metadata: dict, issues: list[Issue]) -> float:
     Returns:
         Metadata completeness score 0.0–1.0.
     """
-    present = sum(
-        1 for field in PDF_METADATA_FIELDS if metadata.get(field, "").strip()
-    )
+    present = sum(1 for field in PDF_METADATA_FIELDS if metadata.get(field, "").strip())
     score = present / len(PDF_METADATA_FIELDS)
 
     if score < 0.3:
@@ -667,11 +671,11 @@ def _scan_docx(path: Path) -> _ScanResult:
     """
     try:
         from docx import Document  # type: ignore[import]
-        from docx.oxml.ns import qn  # type: ignore[import]
+        # type: ignore[import]
     except ImportError:
         raise ImportError(
             "python-docx is required for DOCX scanning. Install with: pip install python-docx"
-        )
+        ) from None
 
     issues: list[Issue] = []
 
@@ -972,7 +976,7 @@ def _scan_html(path: Path) -> _ScanResult:
     except ImportError:
         raise ImportError(
             "beautifulsoup4 is required for HTML scanning. Install with: pip install beautifulsoup4"
-        )
+        ) from None
 
     issues: list[Issue] = []
 
@@ -1096,7 +1100,7 @@ def _scan_markdown(path: Path) -> _ScanResult:
     lines = text.splitlines()
 
     # Heading hierarchy analysis
-    headings = [l for l in lines if re.match(r"^#{1,6}\s", l)]
+    headings = [ln for ln in lines if re.match(r"^#{1,6}\s", ln)]
     if not headings:
         issues.append(
             Issue(
@@ -1118,7 +1122,7 @@ def _scan_markdown(path: Path) -> _ScanResult:
                     Issue(
                         category=IssueCategory.STRUCTURE,
                         severity=Severity.INFO,
-                        message=f"Heading level jumps from h{levels[i-1]} to h{levels[i]} — skipped levels.",
+                        message=f"Heading level jumps from h{levels[i - 1]} to h{levels[i]} — skipped levels.",
                         suggestion="Use sequential heading levels to improve navigation and chunking.",
                     )
                 )
@@ -1369,7 +1373,7 @@ def _detect_formula_issues_paged(page_texts: list[tuple[int, str]]) -> list[Issu
     ]
 
 
-def _detect_language(text: str) -> Optional[str]:
+def _detect_language(text: str) -> str | None:
     """Detect the primary language of the text.
 
     Args:
@@ -1381,13 +1385,14 @@ def _detect_language(text: str) -> Optional[str]:
     if len(text) < LANGUAGE_DETECTION_MIN_CHARS:
         return None
     try:
-        from langdetect import detect, LangDetectException  # type: ignore[import]
+        from langdetect import detect  # type: ignore[import]
+
         return detect(text[:LANGUAGE_DETECTION_SAMPLE_CHARS])
     except Exception:
         return None
 
 
-def _build_language_issue(lang: Optional[str], expected: str = "en") -> Optional[Issue]:
+def _build_language_issue(lang: str | None, expected: str = "en") -> Issue | None:
     """Return an issue if the detected language differs from the expected language.
 
     Args:
@@ -1426,12 +1431,11 @@ def _scan_pptx(path: Path) -> _ScanResult:
     """
     try:
         from pptx import Presentation  # type: ignore[import]
-        from pptx.util import Pt  # type: ignore[import]
     except ImportError:
         raise ImportError(
             "python-pptx is required for PowerPoint scanning. "
             "Install it with: pip install python-pptx"
-        )
+        ) from None
 
     issues: list[Issue] = []
 
@@ -1513,20 +1517,20 @@ def _scan_pptx(path: Path) -> _ScanResult:
                     f"Only {extractable_ratio:.0%} of slides have extractable text. "
                     f"This presentation may be image-heavy."
                 ),
-                suggestion=(
-                    "Use a vision model to caption image-only slides before ingestion."
-                ),
+                suggestion=("Use a vision model to caption image-only slides before ingestion."),
             )
         )
 
     # Check core properties metadata
     props = prs.core_properties
-    meta_fields_present = sum([
-        bool(props.title),
-        bool(props.author),
-        bool(props.subject),
-        bool(getattr(props, "created", None)),
-    ])
+    meta_fields_present = sum(
+        [
+            bool(props.title),
+            bool(props.author),
+            bool(props.subject),
+            bool(getattr(props, "created", None)),
+        ]
+    )
     metadata_score = meta_fields_present / 4.0
     if metadata_score < 0.5:
         issues.append(
@@ -1580,9 +1584,8 @@ def _scan_xlsx(path: Path) -> _ScanResult:
         import openpyxl  # type: ignore[import]
     except ImportError:
         raise ImportError(
-            "openpyxl is required for Excel scanning. "
-            "Install it with: pip install openpyxl"
-        )
+            "openpyxl is required for Excel scanning. Install it with: pip install openpyxl"
+        ) from None
 
     issues: list[Issue] = []
 
@@ -1853,21 +1856,21 @@ def _scan_transcript(path: Path) -> _ScanResult:
         # VTT: lines after "WEBVTT" header, skip timestamp lines (contain "-->")
         lines = text.splitlines()
         spoken_lines = [
-            l for l in lines
-            if l.strip()
-            and "-->" not in l
-            and l.strip() != "WEBVTT"
-            and not re.match(r"^\d+$", l.strip())
-            and not re.match(r"^NOTE", l.strip())
+            ln
+            for ln in lines
+            if ln.strip()
+            and "-->" not in ln
+            and ln.strip() != "WEBVTT"
+            and not re.match(r"^\d+$", ln.strip())
+            and not re.match(r"^NOTE", ln.strip())
         ]
     else:
         # SRT: skip sequence numbers and timestamp lines
         lines = text.splitlines()
         spoken_lines = [
-            l for l in lines
-            if l.strip()
-            and "-->" not in l
-            and not re.match(r"^\d+$", l.strip())
+            ln
+            for ln in lines
+            if ln.strip() and "-->" not in ln and not re.match(r"^\d+$", ln.strip())
         ]
 
     spoken_text = "\n".join(spoken_lines)

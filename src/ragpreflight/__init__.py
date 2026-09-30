@@ -17,19 +17,19 @@ __version__ = "0.1.1"
 __author__ = "Anupama Garani"
 __license__ = "MIT"
 
+from ragpreflight.chunker import analyze_chunks
+from ragpreflight.config import load_config
+from ragpreflight.corpus import audit_corpus
 from ragpreflight.models import (
-    CorpusReport,
     ChunkReport,
+    CorpusReport,
     DocumentReport,
     Issue,
     IssueCategory,
     Severity,
 )
+from ragpreflight.profiles import PROFILES, get_profile
 from ragpreflight.scanner import scan_document
-from ragpreflight.chunker import analyze_chunks
-from ragpreflight.corpus import audit_corpus
-from ragpreflight.profiles import get_profile, PROFILES
-from ragpreflight.config import load_config
 
 __all__ = [
     "__version__",

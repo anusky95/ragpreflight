@@ -18,8 +18,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class RAGCheckNodePostprocessor:
     def postprocess_nodes(
         self,
         nodes: list,
-        query_bundle: Optional[object] = None,
+        query_bundle: object | None = None,
     ) -> list:
         """Filter nodes whose source document fails the quality threshold.
 
@@ -88,7 +88,7 @@ class RAGCheckNodePostprocessor:
 
         return filtered
 
-    def _get_source_path(self, node_with_score: object) -> Optional[str]:
+    def _get_source_path(self, node_with_score: object) -> str | None:
         """Extract source file path from a LlamaIndex NodeWithScore."""
         try:
             node = node_with_score.node  # type: ignore[attr-defined]
@@ -124,8 +124,7 @@ def validate_documents(
                 passing.append(path)
             else:
                 logger.warning(
-                    "RAGCheck: '%s' failed quality gate (score %d < %d) — "
-                    "%d issue(s) detected.",
+                    "RAGCheck: '%s' failed quality gate (score %d < %d) — %d issue(s) detected.",
                     path.name,
                     report.score,
                     min_score,

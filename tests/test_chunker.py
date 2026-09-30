@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from ragpreflight.chunker import (
-    analyze_chunks,
+    _info_density,
+    _split_paragraphs,
     _split_recursive,
     _split_sentences,
-    _split_paragraphs,
-    _info_density,
+    analyze_chunks,
 )
 from ragpreflight.models import ChunkReport
 
@@ -83,6 +83,7 @@ class TestAnalyzeChunks:
 
     def test_custom_splitter_used(self, sample_txt: Path) -> None:
         """Custom splitter should override strategy."""
+
         def my_splitter(text: str) -> list[str]:
             return [text[:100], text[100:200]]
 
@@ -101,6 +102,7 @@ class TestAnalyzeChunks:
 
     def test_to_dict_serialisable(self, sample_txt: Path) -> None:
         import json
+
         chunks = analyze_chunks(sample_txt)
         for chunk in chunks:
             json.dumps(chunk.to_dict())
@@ -117,6 +119,7 @@ class TestAnalyzeChunks:
 # Monkey-patch helper for the empty test
 def _score_is_zero_or_critical(self: ChunkReport) -> bool:
     from ragpreflight.models import Severity
+
     return (
         self.coherence_score is None
         or self.coherence_score == 0.0

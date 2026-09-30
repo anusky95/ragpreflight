@@ -20,8 +20,6 @@ from ragpreflight.taxonomy import (
     list_failure_modes,
     modes_by_stage,
 )
-from ragpreflight.taxonomy.models import FailureMode
-
 
 EXPECTED_DOI = "10.18653/v1/2026.trustnlp-main.27"
 
@@ -40,12 +38,12 @@ EXPECTED_STAGES = {
 }
 
 STAGE_MODE_COUNTS = {
-    "ingestion": 4,          # F1–F4
-    "representation": 2,     # F5–F6
-    "retrieval": 6,          # F7–F12
-    "generation": 5,         # F13–F17
-    "evaluation": 2,         # F18–F19
-    "deployment": 6,         # F20–F25
+    "ingestion": 4,  # F1–F4
+    "representation": 2,  # F5–F6
+    "retrieval": 6,  # F7–F12
+    "generation": 5,  # F13–F17
+    "evaluation": 2,  # F18–F19
+    "deployment": 6,  # F20–F25
     "agentic_orchestration": 8,  # F26–F33
 }
 
@@ -119,9 +117,7 @@ class TestTaxonomyContent:
 
     def test_all_modes_have_nonempty_manifestation(self) -> None:
         for m in list_failure_modes():
-            assert m.observable_manifestation.strip(), (
-                f"{m.id}: observable_manifestation is empty"
-            )
+            assert m.observable_manifestation.strip(), f"{m.id}: observable_manifestation is empty"
 
 
 class TestTaxonomyAPI:

@@ -131,9 +131,7 @@ class TestScanPdf:
 
     def test_empty_pdf_has_critical_or_warning(self, empty_pdf: Path) -> None:
         report = scan_document(empty_pdf)
-        has_bad = any(
-            i.severity in (Severity.CRITICAL, Severity.WARNING) for i in report.issues
-        )
+        has_bad = any(i.severity in (Severity.CRITICAL, Severity.WARNING) for i in report.issues)
         assert has_bad
 
     def test_ocr_errors_pdf_detected(self, ocr_errors_pdf: Path) -> None:
@@ -194,6 +192,7 @@ class TestDocumentReportContract:
 
     def test_to_dict_serialisable(self, sample_txt: Path) -> None:
         import json
+
         report = scan_document(sample_txt)
         d = report.to_dict()
         # Must be JSON serialisable

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ragpreflight.taxonomy.loader import load_taxonomy
-from ragpreflight.taxonomy.models import DetectorStatus, FailureMode
+from ragpreflight.taxonomy.models import FailureMode
 
 
 @dataclass

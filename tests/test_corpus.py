@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ragpreflight.corpus import audit_corpus, _jaccard, _extract_shingles
+from ragpreflight.corpus import _extract_shingles, _jaccard, audit_corpus
 from ragpreflight.models import CorpusReport, IssueCategory
 
 
@@ -35,6 +35,7 @@ class TestAuditCorpus:
 
     def test_to_dict_serialisable(self, fixtures_dir: Path) -> None:
         import json
+
         report = audit_corpus(fixtures_dir, show_progress=False)
         json.dumps(report.to_dict())
 
@@ -51,6 +52,7 @@ class TestAuditCorpus:
 
     def test_custom_profile_applied(self, fixtures_dir: Path) -> None:
         from ragpreflight.profiles import get_profile
+
         profile = get_profile("strict")
         report = audit_corpus(fixtures_dir, profile=profile, show_progress=False)
         # Strict profile may flag more documents
@@ -92,8 +94,12 @@ class TestDuplicateDetection:
 
     def test_different_files_not_duplicates(self, tmp_path: Path) -> None:
         """Files with very different content should not be flagged."""
-        (tmp_path / "doc_a.txt").write_text("Machine learning is a subset of artificial intelligence. " * 30)
-        (tmp_path / "doc_b.txt").write_text("Pizza is made from dough, cheese, and tomato sauce. " * 30)
+        (tmp_path / "doc_a.txt").write_text(
+            "Machine learning is a subset of artificial intelligence. " * 30
+        )
+        (tmp_path / "doc_b.txt").write_text(
+            "Pizza is made from dough, cheese, and tomato sauce. " * 30
+        )
         report = audit_corpus(tmp_path, show_progress=False)
         dup_issues = [i for i in report.corpus_issues if i.category == IssueCategory.DUPLICATION]
         assert len(dup_issues) == 0

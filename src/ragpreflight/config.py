@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ _KNOWN_KEYS = frozenset(
 _CONFIG_FILENAME = ".ragpreflight.toml"
 
 
-def find_config_file() -> Optional[Path]:
+def find_config_file() -> Path | None:
     """Locate .ragpreflight.toml in cwd or home directory.
 
     Returns:
@@ -50,7 +50,7 @@ def find_config_file() -> Optional[Path]:
     return None
 
 
-def load_config(config_path: Optional[Path] = None) -> dict[str, Any]:
+def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load .ragpreflight.toml config file.
 
     Searches cwd → home unless ``config_path`` is given explicitly.
@@ -110,8 +110,7 @@ def _parse_toml(path: Path) -> dict[str, Any]:
     for key in config:
         if key not in _KNOWN_KEYS:
             logger.warning(
-                "Unknown config key '%s' in %s — ignored. "
-                "Valid keys: %s",
+                "Unknown config key '%s' in %s — ignored. Valid keys: %s",
                 key,
                 path,
                 ", ".join(sorted(_KNOWN_KEYS)),

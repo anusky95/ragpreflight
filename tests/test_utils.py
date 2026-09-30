@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ragpreflight.utils import (
+    check_file_size,
     clamp,
     detect_encoding,
     detect_file_format,
@@ -15,7 +16,6 @@ from ragpreflight.utils import (
     iter_supported_files,
     safe_read_text,
     truncate_text,
-    check_file_size,
 )
 
 
@@ -77,7 +77,7 @@ class TestClamp:
 
 class TestDetectEncoding:
     def test_utf8_text(self) -> None:
-        raw = "Hello, world!".encode("utf-8")
+        raw = b"Hello, world!"
         enc, conf = detect_encoding(raw)
         assert conf > 0.5
 

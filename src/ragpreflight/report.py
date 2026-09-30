@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 import textwrap
 from pathlib import Path
-from typing import Any, Optional
 
 from ragpreflight._constants import SEVERITY_COLOURS
 from ragpreflight.models import CorpusReport, DocumentReport, Issue, Severity
-
 
 # ---------------------------------------------------------------------------
 # Document report rendering
@@ -19,12 +17,13 @@ from ragpreflight.models import CorpusReport, DocumentReport, Issue, Severity
 def render_document_report(
     report: DocumentReport,
     fmt: str = "terminal",
-    output: Optional[str] = None,
+    output: str | None = None,
     quiet: bool = False,
 ) -> None:
     """Render a DocumentReport to stdout or a file."""
     if quiet:
         import click
+
         click.echo(report.score)
         return
 
@@ -43,12 +42,13 @@ def render_document_report(
 def render_corpus_report(
     report: CorpusReport,
     fmt: str = "terminal",
-    output: Optional[str] = None,
+    output: str | None = None,
     quiet: bool = False,
 ) -> None:
     """Render a CorpusReport to stdout or a file."""
     if quiet:
         import click
+
         click.echo(round(report.average_score))
         return
 
@@ -70,10 +70,10 @@ def render_corpus_report(
 
 
 def _render_document_terminal(report: DocumentReport) -> None:
+    from rich import box
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-    from rich import box
 
     console = Console()
 
@@ -125,10 +125,10 @@ def _render_document_terminal(report: DocumentReport) -> None:
 
 
 def _render_corpus_terminal(report: CorpusReport) -> None:
+    from rich import box
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-    from rich import box
 
     console = Console()
 
@@ -148,7 +148,9 @@ def _render_corpus_terminal(report: CorpusReport) -> None:
         console.print("\n[bold]Corpus-level Issues[/bold]")
         for issue in report.corpus_issues:
             colour = SEVERITY_COLOURS.get(issue.severity.value, "white")
-            console.print(f"  [{colour}]{issue.severity.value.upper()}[/{colour}]  {issue.message}")
+            console.print(
+                f"  [{colour}]{issue.severity.value.upper()}[/{colour}]  {issue.message}"
+            )
             if issue.suggestion:
                 console.print(f"          [dim]→ {issue.suggestion}[/dim]")
 
@@ -183,14 +185,16 @@ def _render_corpus_terminal(report: CorpusReport) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _output_json(data: dict, output: Optional[str]) -> None:
+def _output_json(data: dict, output: str | None) -> None:
     text = json.dumps(data, indent=2, default=str)
     if output:
         Path(output).write_text(text, encoding="utf-8")
         import click
+
         click.echo(f"JSON report written to {output}")
     else:
         import click
+
         click.echo(text)
 
 
@@ -199,7 +203,7 @@ def _output_json(data: dict, output: Optional[str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _output_html_document(report: DocumentReport, output: Optional[str]) -> None:
+def _output_html_document(report: DocumentReport, output: str | None) -> None:
     html = _build_html(
         title=f"ragpreflight — {Path(report.filepath).name}",
         body=_html_document_body(report),
@@ -207,7 +211,7 @@ def _output_html_document(report: DocumentReport, output: Optional[str]) -> None
     _write_html(html, output)
 
 
-def _output_html_corpus(report: CorpusReport, output: Optional[str]) -> None:
+def _output_html_corpus(report: CorpusReport, output: str | None) -> None:
     html = _build_html(
         title=f"ragpreflight corpus — {report.directory}",
         body=_html_corpus_body(report),
@@ -215,8 +219,9 @@ def _output_html_corpus(report: CorpusReport, output: Optional[str]) -> None:
     _write_html(html, output)
 
 
-def _write_html(html: str, output: Optional[str]) -> None:
+def _write_html(html: str, output: str | None) -> None:
     import click
+
     if output:
         Path(output).write_text(html, encoding="utf-8")
         click.echo(f"HTML report written to {output}")
@@ -350,22 +355,27 @@ def _build_html(title: str, body: str) -> str:
 
 def _html_document_body(report: DocumentReport) -> str:
     score_cls = "good" if report.score >= 70 else ("ok" if report.score >= 40 else "bad")
-    bar_colour = "#27ae60" if report.score >= 70 else ("#f39c12" if report.score >= 40 else "#e74c3c")
+    bar_colour = (
+        "#27ae60" if report.score >= 70 else ("#f39c12" if report.score >= 40 else "#e74c3c")
+    )
 
     if report.score >= 70 and not report.critical_issues:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-ready", "INGEST-READY",
-            "Document meets quality thresholds for RAG ingestion."
+            "verdict-ready",
+            "INGEST-READY",
+            "Document meets quality thresholds for RAG ingestion.",
         )
     elif report.score >= 40 or not report.critical_issues:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-review", "NEEDS REVIEW",
-            f"{len(report.critical_issues)} critical issue(s) should be resolved before ingestion."
+            "verdict-review",
+            "NEEDS REVIEW",
+            f"{len(report.critical_issues)} critical issue(s) should be resolved before ingestion.",
         )
     else:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-fail", "DO NOT INGEST",
-            f"Score {report.score}/100 with {len(report.critical_issues)} critical issue(s). Remediate before use."
+            "verdict-fail",
+            "DO NOT INGEST",
+            f"Score {report.score}/100 with {len(report.critical_issues)} critical issue(s). Remediate before use.",
         )
 
     issues_html = ""
@@ -373,14 +383,8 @@ def _html_document_body(report: DocumentReport) -> str:
         badge_cls = f"badge-{issue.severity.value}"
         sev_cls = f"sev-{issue.severity.value}"
         loc = f" <em>({issue.location})</em>" if issue.location else ""
-        ctx_html = (
-            f"<div class='ctx'>↳ {issue.context}</div>"
-            if issue.context else ""
-        )
-        fix_html = (
-            f"<p class='fix'>→ {issue.suggestion}</p>"
-            if issue.suggestion else ""
-        )
+        ctx_html = f"<div class='ctx'>↳ {issue.context}</div>" if issue.context else ""
+        fix_html = f"<p class='fix'>→ {issue.suggestion}</p>" if issue.suggestion else ""
         tax_html = ""
         if issue.taxonomy_refs:
             ref_items: list[str] = []
@@ -392,7 +396,9 @@ def _html_document_body(report: DocumentReport) -> str:
                 }.get(r.relationship, r.relationship)
                 name_part = f" · {r.mode_name}" if r.mode_name else ""
                 defn_part = f"<br><em class='tax-def'>{r.definition}</em>" if r.definition else ""
-                expl_part = f"<br><small class='tax-expl'>{r.explanation}</small>" if r.explanation else ""
+                expl_part = (
+                    f"<br><small class='tax-expl'>{r.explanation}</small>" if r.explanation else ""
+                )
                 ref_items.append(
                     f"<span class='tax-item'>"
                     f"<a href='https://doi.org/10.18653/v1/2026.trustnlp-main.27' "
@@ -404,9 +410,7 @@ def _html_document_body(report: DocumentReport) -> str:
                 )
             tax_html = (
                 "<div class='tax-ref'>"
-                "<strong>Garani 2026 failure mode:</strong> "
-                + " ".join(ref_items)
-                + "</div>"
+                "<strong>Garani 2026 failure mode:</strong> " + " ".join(ref_items) + "</div>"
             )
 
         issues_html += f"""
@@ -448,18 +452,21 @@ def _html_corpus_body(report: CorpusReport) -> str:
 
     if avg >= 70 and critical_count == 0:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-ready", "INGEST-READY",
-            f"Corpus average {avg:.0f}/100 with no critical issues. Safe to ingest."
+            "verdict-ready",
+            "INGEST-READY",
+            f"Corpus average {avg:.0f}/100 with no critical issues. Safe to ingest.",
         )
     elif avg >= 50 or critical_count <= 2:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-review", "NEEDS REVIEW",
-            f"Average {avg:.0f}/100 · {critical_count} critical issue(s) require attention before ingestion."
+            "verdict-review",
+            "NEEDS REVIEW",
+            f"Average {avg:.0f}/100 · {critical_count} critical issue(s) require attention before ingestion.",
         )
     else:
         verdict_cls, verdict_label, verdict_desc = (
-            "verdict-fail", "DO NOT INGEST",
-            f"Average {avg:.0f}/100 · {critical_count} critical issue(s). Remediate before ingestion."
+            "verdict-fail",
+            "DO NOT INGEST",
+            f"Average {avg:.0f}/100 · {critical_count} critical issue(s). Remediate before ingestion.",
         )
 
     # Corpus-level issue summary
@@ -469,7 +476,11 @@ def _html_corpus_body(report: CorpusReport) -> str:
         corpus_issues_html += (
             f"<li><span class='badge {badge_cls}'>{issue.severity.value.upper()}</span> "
             f"{issue.message}"
-            + (f"<br><span class='action-fix'>→ {issue.suggestion}</span>" if issue.suggestion else "")
+            + (
+                f"<br><span class='action-fix'>→ {issue.suggestion}</span>"
+                if issue.suggestion
+                else ""
+            )
             + "</li>"
         )
 
@@ -478,10 +489,12 @@ def _html_corpus_body(report: CorpusReport) -> str:
     for doc in report.documents:
         for issue in doc.issues:
             all_issues.append((issue, Path(doc.filepath).name))
-    all_issues.sort(key=lambda x: (
-        x[0].severity != Severity.CRITICAL,
-        x[0].severity != Severity.WARNING,
-    ))
+    all_issues.sort(
+        key=lambda x: (
+            x[0].severity != Severity.CRITICAL,
+            x[0].severity != Severity.WARNING,
+        )
+    )
     top_actions_html = ""
     for issue, fname in all_issues[:5]:
         badge_cls = f"badge-{issue.severity.value}"
@@ -506,7 +519,8 @@ def _html_corpus_body(report: CorpusReport) -> str:
         sc = "good" if doc.score >= 70 else ("ok" if doc.score >= 40 else "bad")
         crit_badge = (
             " <span style='color:#e74c3c;font-size:0.75em;font-weight:700'> ● CRITICAL</span>"
-            if doc.critical_issues else ""
+            if doc.critical_issues
+            else ""
         )
         issues_detail = ""
         for issue in doc.issues:
@@ -544,23 +558,31 @@ def _html_corpus_body(report: CorpusReport) -> str:
                 f"</div>"
             )
 
+        no_issues_placeholder = "<em style='color:#888'>No issues.</em>"
+        issues_cell = issues_detail or no_issues_placeholder
+        crit_cell = (
+            "<td><span style='color:#e74c3c;font-weight:700'>"
+            + str(len(doc.critical_issues))
+            + "</span></td>"
+            if doc.critical_issues
+            else "<td>0</td>"
+        )
         rows += (
             f"<tr>"
             f"<td class='{sc}'>{doc.score}</td>"
             f"<td><details class='doc-details'>"
             f"<summary class='doc-name'>{Path(doc.filepath).name}{crit_badge}</summary>"
-            f"<div class='doc-issues'>{issues_detail or '<em style=\"color:#888\">No issues.</em>'}</div>"
+            f"<div class='doc-issues'>{issues_cell}</div>"
             f"</details></td>"
             f"<td>{doc.file_format.upper()}</td>"
-            f"<td>{len(doc.issues)}</td>"
-            f"<td>{'<span style=\"color:#e74c3c;font-weight:700\">' + str(len(doc.critical_issues)) + '</span>' if doc.critical_issues else '0'}</td>"
-            f"</tr>"
+            f"<td>{len(doc.issues)}</td>" + crit_cell + "</tr>"
         )
 
     # Taxonomy coverage panel
     tax_html = ""
     try:
         from ragpreflight.taxonomy import detector_coverage
+
         cov = detector_coverage()
         direct_ids = ", ".join(m.id for m in cov.direct)
         proxy_ids = ", ".join(m.id for m in cov.proxy)
@@ -614,7 +636,7 @@ def _html_corpus_body(report: CorpusReport) -> str:
 </div>
 <div class='score-row'>
   <span class='score-num {score_cls}'>{avg:.1f}/100</span>
-  <span class='bar'><span class='bar-fill' style='width:{min(avg,100):.0f}%;background:{bar_colour}'></span></span>
+  <span class='bar'><span class='bar-fill' style='width:{min(avg, 100):.0f}%;background:{bar_colour}'></span></span>
   <span style='color:#888;font-size:0.9em'>{report.total_documents} documents · {len(report.duplicate_groups)} duplicate group(s)</span>
 </div>
 <div class='meta'>
@@ -661,9 +683,9 @@ def _score_bar(score: int, width: int = 20) -> str:
 def _human_size(size_bytes: int) -> str:
     if size_bytes < 1024:
         return f"{size_bytes} B"
-    if size_bytes < 1024 ** 2:
+    if size_bytes < 1024**2:
         return f"{size_bytes / 1024:.1f} KB"
-    if size_bytes < 1024 ** 3:
+    if size_bytes < 1024**3:
         return f"{size_bytes / 1024**2:.1f} MB"
     return f"{size_bytes / 1024**3:.1f} GB"
 
@@ -675,28 +697,60 @@ def _human_size(size_bytes: int) -> str:
 _SARIF_LEVEL = {"critical": "error", "warning": "warning", "info": "note"}
 
 _SARIF_RULES = [
-    {"id": "OCR001", "name": "OcrError", "category": "ocr",
-     "shortDescription": "OCR character substitution or artifact detected"},
-    {"id": "ENC001", "name": "EncodingError", "category": "encoding",
-     "shortDescription": "Encoding issue or low-confidence character detection"},
-    {"id": "STR001", "name": "StructureError", "category": "structure",
-     "shortDescription": "Document structural problem (broken hierarchy, tables)"},
-    {"id": "CNT001", "name": "ContentError", "category": "content",
-     "shortDescription": "Content quality issue (sparse, empty, PII, formulas)"},
-    {"id": "META001", "name": "MetadataError", "category": "metadata",
-     "shortDescription": "Missing or incomplete document metadata"},
-    {"id": "CHK001", "name": "ChunkingError", "category": "chunking",
-     "shortDescription": "Chunk boundary or coherence problem"},
-    {"id": "DUP001", "name": "Duplication", "category": "duplication",
-     "shortDescription": "Near-duplicate documents detected"},
-    {"id": "STA001", "name": "Staleness", "category": "staleness",
-     "shortDescription": "Document may be outdated"},
+    {
+        "id": "OCR001",
+        "name": "OcrError",
+        "category": "ocr",
+        "shortDescription": "OCR character substitution or artifact detected",
+    },
+    {
+        "id": "ENC001",
+        "name": "EncodingError",
+        "category": "encoding",
+        "shortDescription": "Encoding issue or low-confidence character detection",
+    },
+    {
+        "id": "STR001",
+        "name": "StructureError",
+        "category": "structure",
+        "shortDescription": "Document structural problem (broken hierarchy, tables)",
+    },
+    {
+        "id": "CNT001",
+        "name": "ContentError",
+        "category": "content",
+        "shortDescription": "Content quality issue (sparse, empty, PII, formulas)",
+    },
+    {
+        "id": "META001",
+        "name": "MetadataError",
+        "category": "metadata",
+        "shortDescription": "Missing or incomplete document metadata",
+    },
+    {
+        "id": "CHK001",
+        "name": "ChunkingError",
+        "category": "chunking",
+        "shortDescription": "Chunk boundary or coherence problem",
+    },
+    {
+        "id": "DUP001",
+        "name": "Duplication",
+        "category": "duplication",
+        "shortDescription": "Near-duplicate documents detected",
+    },
+    {
+        "id": "STA001",
+        "name": "Staleness",
+        "category": "staleness",
+        "shortDescription": "Document may be outdated",
+    },
 ]
 
 _CATEGORY_TO_RULE_ID = {r["category"]: r["id"] for r in _SARIF_RULES}
 
 
-def _output_sarif(reports: list[DocumentReport], output: Optional[str]) -> None:
+def _output_sarif(reports: list[DocumentReport], output: str | None) -> None:
     """Generate a SARIF 2.1.0 report for GitHub Code Scanning integration."""
     from ragpreflight import __version__
 
@@ -708,44 +762,53 @@ def _output_sarif(reports: list[DocumentReport], output: Optional[str]) -> None:
             message_text = issue.message
             if issue.suggestion:
                 message_text += f" — {issue.suggestion}"
-            results.append({
-                "ruleId": rule_id,
-                "level": level,
-                "message": {"text": message_text},
-                "locations": [{
-                    "physicalLocation": {
-                        "artifactLocation": {"uri": report.filepath, "uriBaseId": "%SRCROOT%"},
-                        "region": {"startLine": 1},
-                    }
-                }],
-                "properties": {
-                    "score": report.score,
-                    "location": issue.location or "",
-                },
-            })
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": level,
+                    "message": {"text": message_text},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {
+                                    "uri": report.filepath,
+                                    "uriBaseId": "%SRCROOT%",
+                                },
+                                "region": {"startLine": 1},
+                            }
+                        }
+                    ],
+                    "properties": {
+                        "score": report.score,
+                        "location": issue.location or "",
+                    },
+                }
+            )
 
     sarif = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
-        "runs": [{
-            "tool": {
-                "driver": {
-                    "name": "ragpreflight",
-                    "version": __version__,
-                    "informationUri": "https://github.com/anusky95/ragpreflight",
-                    "rules": [
-                        {
-                            "id": r["id"],
-                            "name": r["name"],
-                            "shortDescription": {"text": r["shortDescription"]},
-                            "helpUri": "https://github.com/anusky95/ragpreflight#rules",
-                        }
-                        for r in _SARIF_RULES
-                    ],
-                }
-            },
-            "results": results,
-        }],
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "ragpreflight",
+                        "version": __version__,
+                        "informationUri": "https://github.com/anusky95/ragpreflight",
+                        "rules": [
+                            {
+                                "id": r["id"],
+                                "name": r["name"],
+                                "shortDescription": {"text": r["shortDescription"]},
+                                "helpUri": "https://github.com/anusky95/ragpreflight#rules",
+                            }
+                            for r in _SARIF_RULES
+                        ],
+                    }
+                },
+                "results": results,
+            }
+        ],
     }
 
     _output_json(sarif, output)

@@ -20,7 +20,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from ragpreflight._constants import DEFAULT_STALE_MONTHS
 from ragpreflight.models import CorpusReport, DocumentReport, Issue, IssueCategory, Severity
@@ -38,7 +37,7 @@ _CACHE_FILE = ".ragpreflight_cache.json"
 
 def audit_corpus(
     directory: str | Path,
-    profile: Optional[dict] = None,
+    profile: dict | None = None,
     max_file_size_mb: float = 100.0,
     stale_months: int = DEFAULT_STALE_MONTHS,
     show_progress: bool = True,
@@ -71,8 +70,7 @@ def audit_corpus(
     root = Path(directory).resolve()
     if not root.is_dir():
         raise NotADirectoryError(
-            f"'{directory}' is not a directory. "
-            f"Use scan_document() to scan a single file."
+            f"'{directory}' is not a directory. Use scan_document() to scan a single file."
         )
 
     files = iter_supported_files(root)
@@ -102,9 +100,7 @@ def audit_corpus(
     use_progress = show_progress and len(files) >= 5
 
     if parallel and len(files) > 1:
-        doc_reports = _scan_parallel(
-            files, max_file_size_mb, max_workers, cache, use_progress
-        )
+        doc_reports = _scan_parallel(files, max_file_size_mb, max_workers, cache, use_progress)
     else:
         doc_reports = _scan_sequential(files, max_file_size_mb, cache, use_progress)
 
@@ -240,7 +236,14 @@ def _scan_parallel(
 
     if show_progress and len(files) >= 5:
         try:
-            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+            from rich.progress import (
+                BarColumn,
+                Progress,
+                SpinnerColumn,
+                TaskProgressColumn,
+                TextColumn,
+            )
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -262,8 +265,7 @@ def _scan_parallel(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_safe_scan, fpath, max_file_size_mb): fpath
-            for fpath in pending
+            executor.submit(_safe_scan, fpath, max_file_size_mb): fpath for fpath in pending
         }
         for future in as_completed(futures):
             results.append(future.result())
@@ -291,7 +293,14 @@ def _scan_sequential(
     use_progress = show_progress and len(files) >= 5
     if use_progress:
         try:
-            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+            from rich.progress import (
+                BarColumn,
+                Progress,
+                SpinnerColumn,
+                TaskProgressColumn,
+                TextColumn,
+            )
+
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -321,9 +330,7 @@ def _cache_key(path: Path) -> str:
     """Derive a cache key from file path + mtime + size."""
     try:
         stat = path.stat()
-        return hashlib.md5(
-            f"{path}:{stat.st_mtime}:{stat.st_size}".encode()
-        ).hexdigest()
+        return hashlib.md5(f"{path}:{stat.st_mtime}:{stat.st_size}".encode()).hexdigest()
     except OSError:
         return str(path)
 
@@ -356,10 +363,10 @@ def _save_cache(
             updated[path_to_key[fpath]] = _serialize_report(path_to_report[fp_str])
 
     cache_path = directory / _CACHE_FILE
-    try:
+    import contextlib
+
+    with contextlib.suppress(OSError):
         cache_path.write_text(json.dumps(updated, indent=2), encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _serialize_report(report: DocumentReport) -> dict:
@@ -370,6 +377,7 @@ def _serialize_report(report: DocumentReport) -> dict:
 def _deserialize_report(data: dict) -> DocumentReport:
     """Deserialize a DocumentReport from cached dict data."""
     from ragpreflight.models import Issue, IssueCategory, Severity
+
     issues = [
         Issue(
             category=IssueCategory(i["category"]),
@@ -446,7 +454,6 @@ def _find_near_duplicates(
         # datasketch >=2.0.0 changed default permutation scheme to 'affine32'.
         # We create all MinHash objects fresh each run so there's no cross-version
         # pickling issue — just import and use the current API.
-        from datasketch import MinHash, MinHashLSH  # type: ignore[import]
         return _minhash_duplicates(reports, similarity_threshold)
     except ImportError:
         logger.debug(
@@ -476,8 +483,8 @@ def _find_conflict_candidates(
         List of (filepath1, filepath2) pairs for human review.
     """
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore[import]
         import numpy as np  # type: ignore[import]
+        from sentence_transformers import SentenceTransformer  # type: ignore[import]
     except ImportError:
         logger.debug(
             "sentence-transformers not installed. Conflict candidate detection skipped. "

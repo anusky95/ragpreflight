@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from ragpreflight._constants import (
     DEFAULT_CHUNK_OVERLAP,
@@ -38,8 +38,8 @@ def analyze_chunks(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_CHUNK_OVERLAP,
     strategy: str = "recursive",
-    splitter: Optional[Callable[[str], list[str]]] = None,
-    profile: Optional[dict] = None,
+    splitter: Callable[[str], list[str]] | None = None,
+    profile: dict | None = None,
 ) -> list[ChunkReport]:
     """Analyse document chunks for RAG readiness.
 
@@ -175,11 +175,13 @@ def _extract_text(path: Path, fmt: str) -> str:
         return _extract_docx_text(path)
     if fmt in ("txt", "csv", "tsv", "markdown"):
         from ragpreflight.utils import safe_read_text
+
         text, _ = safe_read_text(path)
         return text
     if fmt == "html":
         return _extract_html_text(path)
     from ragpreflight.utils import safe_read_text
+
     text, _ = safe_read_text(path)
     return text
 
@@ -187,6 +189,7 @@ def _extract_text(path: Path, fmt: str) -> str:
 def _extract_pdf_text(path: Path) -> str:
     try:
         import pymupdf as fitz  # type: ignore[import]
+
         doc = fitz.open(str(path))
         pages = [doc[i].get_text("text") for i in range(doc.page_count)]
         doc.close()
@@ -199,6 +202,7 @@ def _extract_pdf_text(path: Path) -> str:
 def _extract_docx_text(path: Path) -> str:
     try:
         from docx import Document  # type: ignore[import]
+
         doc = Document(str(path))
         return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
     except Exception as exc:
@@ -209,7 +213,9 @@ def _extract_docx_text(path: Path) -> str:
 def _extract_html_text(path: Path) -> str:
     try:
         from bs4 import BeautifulSoup  # type: ignore[import]
+
         from ragpreflight.utils import safe_read_text
+
         text, _ = safe_read_text(path)
         soup = BeautifulSoup(text, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
@@ -254,7 +260,7 @@ def _split_recursive(
     text: str,
     chunk_size: int,
     overlap: int,
-    separators: Optional[list[str]] = None,
+    separators: list[str] | None = None,
 ) -> list[str]:
     """Recursive character splitter — tries to respect sentence and paragraph boundaries.
 
@@ -272,9 +278,7 @@ def _split_recursive(
     return _recursive_split(text, chunk_size, overlap, _seps)
 
 
-def _recursive_split(
-    text: str, chunk_size: int, overlap: int, separators: list[str]
-) -> list[str]:
+def _recursive_split(text: str, chunk_size: int, overlap: int, separators: list[str]) -> list[str]:
     if len(text) <= chunk_size:
         return [text] if text.strip() else []
 
@@ -472,12 +476,66 @@ def _info_density(chunk: str) -> float:
     """
     # Basic English stopword list (no external dependency)
     stopwords = {
-        "the", "a", "an", "is", "it", "in", "on", "at", "to", "of", "and",
-        "or", "for", "with", "as", "by", "from", "that", "this", "be", "are",
-        "was", "were", "has", "have", "had", "not", "but", "if", "its", "can",
-        "will", "would", "could", "should", "may", "might", "do", "did", "does",
-        "so", "up", "out", "no", "we", "he", "she", "they", "their", "our",
-        "your", "my", "his", "her", "i", "you", "us", "me", "him", "them",
+        "the",
+        "a",
+        "an",
+        "is",
+        "it",
+        "in",
+        "on",
+        "at",
+        "to",
+        "of",
+        "and",
+        "or",
+        "for",
+        "with",
+        "as",
+        "by",
+        "from",
+        "that",
+        "this",
+        "be",
+        "are",
+        "was",
+        "were",
+        "has",
+        "have",
+        "had",
+        "not",
+        "but",
+        "if",
+        "its",
+        "can",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "do",
+        "did",
+        "does",
+        "so",
+        "up",
+        "out",
+        "no",
+        "we",
+        "he",
+        "she",
+        "they",
+        "their",
+        "our",
+        "your",
+        "my",
+        "his",
+        "her",
+        "i",
+        "you",
+        "us",
+        "me",
+        "him",
+        "them",
     }
     tokens = re.findall(r"\b[a-zA-Z]+\b", chunk.lower())
     if not tokens:
@@ -490,11 +548,11 @@ def _info_density(chunk: str) -> float:
 # Coherence scoring (optional: sentence-transformers)
 # ---------------------------------------------------------------------------
 
-_embedder_cache: Optional[object] = None
+_embedder_cache: object | None = None
 _embedder_tried = False
 
 
-def _get_embedder() -> Optional[object]:
+def _get_embedder() -> object | None:
     """Return a sentence-transformers model, or None if not installed.
 
     Returns:
@@ -506,6 +564,7 @@ def _get_embedder() -> Optional[object]:
     _embedder_tried = True
     try:
         from sentence_transformers import SentenceTransformer  # type: ignore[import]
+
         _embedder_cache = SentenceTransformer("all-MiniLM-L6-v2")
         logger.debug("Loaded sentence-transformers for coherence scoring.")
     except ImportError:
@@ -520,7 +579,7 @@ def _get_embedder() -> Optional[object]:
     return _embedder_cache
 
 
-def _score_coherence(chunk: str, embedder: Optional[object]) -> Optional[float]:
+def _score_coherence(chunk: str, embedder: object | None) -> float | None:
     """Compute semantic coherence of a chunk.
 
     Splits the chunk into sentences, embeds each, and computes mean pairwise
@@ -545,6 +604,7 @@ def _score_coherence(chunk: str, embedder: Optional[object]) -> Optional[float]:
 
     try:
         import numpy as np  # type: ignore[import]
+
         embeddings = embedder.encode(sentences, show_progress_bar=False)  # type: ignore[attr-defined]
         # Normalise
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -599,8 +659,8 @@ def _check_semantic_boundaries(chunks: list[str], embedder: object) -> list[Issu
         norms = np.where(norms == 0, 1, norms)
         embeddings = embeddings / norms
 
-        over_split: list[int] = []   # adjacent chunks too similar
-        hard_break: list[int] = []   # adjacent chunks too different
+        over_split: list[int] = []  # adjacent chunks too similar
+        hard_break: list[int] = []  # adjacent chunks too different
 
         for i in range(len(chunks) - 1):
             tail_emb = embeddings[i * 2]

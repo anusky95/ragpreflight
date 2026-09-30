@@ -34,8 +34,7 @@ OCR_PATTERN_DESCRIPTIONS: dict[str, tuple[str, str, str]] = {
     ),
     "O_0": (
         "O / 0 confusion",
-        "The letter O was substituted with the digit 0 "
-        "(e.g. 'pr0tocol' instead of 'protocol').",
+        "The letter O was substituted with the digit 0 (e.g. 'pr0tocol' instead of 'protocol').",
         "Breaks exact-match retrieval and degrades embedding quality for technical terms.",
     ),
     "rn_m": (
@@ -86,51 +85,78 @@ OCR_PATTERN_DESCRIPTIONS: dict[str, tuple[str, str, str]] = {
 # Applied post-scan to populate taxonomy_refs on all issues automatically.
 ISSUE_CATEGORY_TO_FCODE: dict[str, list[tuple[str, str, str]]] = {
     "ocr": [
-        ("F3", "direct",
-         "OCR artifacts directly cause Document Quality failures (F3): garbled tokens "
-         "degrade embedding quality and break keyword retrieval (Garani 2026, §Ingestion)."),
+        (
+            "F3",
+            "direct",
+            "OCR artifacts directly cause Document Quality failures (F3): garbled tokens "
+            "degrade embedding quality and break keyword retrieval (Garani 2026, §Ingestion).",
+        ),
     ],
     "encoding": [
-        ("F3", "direct",
-         "Encoding corruption produces garbled text that directly causes Document Quality "
-         "failures (F3) — embeddings for corrupted sentences are unreliable."),
+        (
+            "F3",
+            "direct",
+            "Encoding corruption produces garbled text that directly causes Document Quality "
+            "failures (F3) — embeddings for corrupted sentences are unreliable.",
+        ),
     ],
     "content": [
-        ("F3", "proxy",
-         "Low content density or empty pages are a proxy for Layout Parsing Errors (F3). "
-         "Pages that yield no extractable text indicate failed parsing — embeddings for "
-         "blank or garbled chunks degrade corpus-wide retrieval recall."),
+        (
+            "F3",
+            "proxy",
+            "Low content density or empty pages are a proxy for Layout Parsing Errors (F3). "
+            "Pages that yield no extractable text indicate failed parsing — embeddings for "
+            "blank or garbled chunks degrade corpus-wide retrieval recall.",
+        ),
     ],
     "structure": [
-        ("F3", "proxy",
-         "Detected tables are a proxy for Layout Parsing Errors (F3) — heterogeneous "
-         "layouts resist uniform text extraction."),
-        ("F7", "risk_signal",
-         "Tables and structured elements are a risk signal for Chunking Boundary Errors (F7). "
-         "A chunker that does not understand table structure will split rows mid-cell, "
-         "producing incoherent chunks that hurt retrieval precision."),
+        (
+            "F3",
+            "proxy",
+            "Detected tables are a proxy for Layout Parsing Errors (F3) — heterogeneous "
+            "layouts resist uniform text extraction.",
+        ),
+        (
+            "F7",
+            "risk_signal",
+            "Tables and structured elements are a risk signal for Chunking Boundary Errors (F7). "
+            "A chunker that does not understand table structure will split rows mid-cell, "
+            "producing incoherent chunks that hurt retrieval precision.",
+        ),
     ],
     "metadata": [
-        ("F11", "risk_signal",
-         "Sparse or missing metadata is a risk signal for Low Recall / Ranking Failures (F11). "
-         "Without title, author, or date, retrieval systems cannot filter or re-rank by source "
-         "quality — relevant documents are harder to surface above the top-k cutoff."),
+        (
+            "F11",
+            "risk_signal",
+            "Sparse or missing metadata is a risk signal for Low Recall / Ranking Failures (F11). "
+            "Without title, author, or date, retrieval systems cannot filter or re-rank by source "
+            "quality — relevant documents are harder to surface above the top-k cutoff.",
+        ),
     ],
     "chunking": [
-        ("F7", "direct",
-         "Chunking boundary issues directly cause Structure-Unaware Chunking failures (F7): "
-         "mid-sentence cuts and table splits degrade chunk coherence and retrieval precision."),
+        (
+            "F7",
+            "direct",
+            "Chunking boundary issues directly cause Structure-Unaware Chunking failures (F7): "
+            "mid-sentence cuts and table splits degrade chunk coherence and retrieval precision.",
+        ),
     ],
     "duplication": [
-        ("F11", "proxy",
-         "Near-duplicate documents are a proxy for Redundant/Duplicate Context (F11). "
-         "Duplicate chunks inflate context windows and dilute the relevant signal."),
+        (
+            "F11",
+            "proxy",
+            "Near-duplicate documents are a proxy for Redundant/Duplicate Context (F11). "
+            "Duplicate chunks inflate context windows and dilute the relevant signal.",
+        ),
     ],
     "staleness": [
-        ("F1", "proxy",
-         "File-age detection is a proxy for Outdated/Stale Data (F1). "
-         "This does NOT confirm content is outdated — only that the file is old. "
-         "Human review required."),
+        (
+            "F1",
+            "proxy",
+            "File-age detection is a proxy for Outdated/Stale Data (F1). "
+            "This does NOT confirm content is outdated — only that the file is old. "
+            "Human review required.",
+        ),
     ],
 }
 
@@ -176,8 +202,15 @@ CONTROL_CHAR_PATTERN = r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]"
 # ---------------------------------------------------------------------------
 
 HTML_BOILERPLATE_TAGS = {
-    "nav", "footer", "header", "aside", "script", "style", "noscript",
-    "advertisement", "cookie-banner",
+    "nav",
+    "footer",
+    "header",
+    "aside",
+    "script",
+    "style",
+    "noscript",
+    "advertisement",
+    "cookie-banner",
 }
 
 # ---------------------------------------------------------------------------
@@ -192,8 +225,21 @@ DOCX_METADATA_FIELDS = ["title", "author", "subject", "keywords", "created", "mo
 # ---------------------------------------------------------------------------
 
 SUPPORTED_EXTENSIONS = {
-    ".pdf", ".docx", ".txt", ".csv", ".tsv", ".html", ".htm", ".md", ".markdown",
-    ".pptx", ".xlsx", ".xls", ".ipynb", ".srt", ".vtt",
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".csv",
+    ".tsv",
+    ".html",
+    ".htm",
+    ".md",
+    ".markdown",
+    ".pptx",
+    ".xlsx",
+    ".xls",
+    ".ipynb",
+    ".srt",
+    ".vtt",
 }
 
 # ---------------------------------------------------------------------------

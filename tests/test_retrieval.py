@@ -83,6 +83,7 @@ class TestSimulateRetrieval:
     )
     def test_simulate_returns_metrics(self, fixtures_dir: Path) -> None:
         from ragpreflight.retrieval import simulate_retrieval
+
         result = simulate_retrieval(fixtures_dir, queries_per_doc=2, top_k=3)
         if "error" in result:
             pytest.skip(f"Embedder not available: {result['error']}")

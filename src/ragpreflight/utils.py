@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from charset_normalizer import from_bytes  # replaces chardet — faster, more accurate
 
@@ -77,7 +76,7 @@ def check_file_size(
     path: str | Path,
     max_mb: float = DEFAULT_MAX_FILE_SIZE_MB,
     hard_max_mb: float = HARD_MAX_FILE_SIZE_MB,
-) -> tuple[int, Optional[str]]:
+) -> tuple[int, str | None]:
     """Check file size and return (size_bytes, warning_message_or_None).
 
     Args:

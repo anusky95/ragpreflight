@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ragpreflight._constants import (
     DEFAULT_QUERIES_PER_DOC,
@@ -24,7 +24,7 @@ from ragpreflight._constants import (
     DEFAULT_RETRIEVAL_TOP_K,
     QUERY_TEMPLATES,
 )
-from ragpreflight.chunker import analyze_chunks, _extract_text, _split_recursive
+from ragpreflight.chunker import _extract_text, _split_recursive
 from ragpreflight.utils import iter_supported_files
 
 logger = logging.getLogger(__name__)
@@ -94,10 +94,13 @@ def simulate_retrieval(
     for fpath in files:
         try:
             from ragpreflight.scanner import scan_document
+
             doc_report = scan_document(fpath)
             text = _extract_text(fpath, doc_report.file_format)
             if text.strip():
-                chunks = _split_recursive(text, chunk_size, chunk_overlap, ["\n\n", "\n", ". ", " ", ""])
+                chunks = _split_recursive(
+                    text, chunk_size, chunk_overlap, ["\n\n", "\n", ". ", " ", ""]
+                )
                 for chunk in chunks:
                     if chunk.strip():
                         corpus_chunks.append((str(fpath), chunk))
@@ -115,15 +118,14 @@ def simulate_retrieval(
     for fpath in files:
         try:
             from ragpreflight.scanner import scan_document
+
             doc_report = scan_document(fpath)
             text = _extract_text(fpath, doc_report.file_format)
             if not text.strip():
                 continue
 
             if use_llm:
-                llm_queries = _generate_llm_queries(
-                    text, queries_per_doc, llm_endpoint, llm_model
-                )
+                llm_queries = _generate_llm_queries(text, queries_per_doc, llm_endpoint, llm_model)
                 if llm_queries:
                     all_queries.extend(llm_queries)
                     continue
@@ -144,6 +146,7 @@ def simulate_retrieval(
     chunk_texts = [c for _, c in corpus_chunks]
     try:
         import numpy as np  # type: ignore[import]
+
         chunk_embeddings = embedder.encode(  # type: ignore[attr-defined]
             chunk_texts, show_progress_bar=False, batch_size=32
         )
@@ -155,6 +158,7 @@ def simulate_retrieval(
 
     # Normalise
     import numpy as np
+
     chunk_norms = np.linalg.norm(chunk_embeddings, axis=1, keepdims=True)
     chunk_norms = np.where(chunk_norms == 0, 1, chunk_norms)
     chunk_emb_norm = chunk_embeddings / chunk_norms
@@ -261,7 +265,11 @@ def _generate_extractive_queries(text: str, n: int = DEFAULT_QUERIES_PER_DOC) ->
         if entity not in seen_entities and len(entity) > 4:
             seen_entities.add(entity)
             template = QUERY_TEMPLATES[len(queries) % len(QUERY_TEMPLATES)]
-            queries.append(template.format(entity=entity, concept=entity, key_phrase=entity, section_title=entity))
+            queries.append(
+                template.format(
+                    entity=entity, concept=entity, key_phrase=entity, section_title=entity
+                )
+            )
             if len(queries) >= n * 2:
                 break
 
@@ -269,7 +277,9 @@ def _generate_extractive_queries(text: str, n: int = DEFAULT_QUERIES_PER_DOC) ->
     key_phrases = _simple_keyphrases(text, top_n=n)
     for phrase in key_phrases:
         template = QUERY_TEMPLATES[len(queries) % len(QUERY_TEMPLATES)]
-        queries.append(template.format(entity=phrase, concept=phrase, key_phrase=phrase, section_title=phrase))
+        queries.append(
+            template.format(entity=phrase, concept=phrase, key_phrase=phrase, section_title=phrase)
+        )
 
     # Deduplicate and trim
     seen: set[str] = set()
@@ -298,17 +308,47 @@ def _simple_keyphrases(text: str, top_n: int = 10) -> list[str]:
     # Find 2-3 word lowercase phrases that appear multiple times
     words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
     stopwords = {
-        "the", "and", "for", "with", "that", "this", "from", "are", "was",
-        "were", "has", "have", "been", "not", "but", "can", "will", "its",
-        "into", "they", "their", "our", "your", "also", "when", "then",
-        "than", "more", "all", "any", "each", "only", "may", "should",
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "are",
+        "was",
+        "were",
+        "has",
+        "have",
+        "been",
+        "not",
+        "but",
+        "can",
+        "will",
+        "its",
+        "into",
+        "they",
+        "their",
+        "our",
+        "your",
+        "also",
+        "when",
+        "then",
+        "than",
+        "more",
+        "all",
+        "any",
+        "each",
+        "only",
+        "may",
+        "should",
     }
 
     # Bigram frequency
     bigram_freq: dict[str, int] = {}
     for i in range(len(words) - 1):
         if words[i] not in stopwords and words[i + 1] not in stopwords:
-            bigram = f"{words[i]} {words[i+1]}"
+            bigram = f"{words[i]} {words[i + 1]}"
             bigram_freq[bigram] = bigram_freq.get(bigram, 0) + 1
 
     sorted_bigrams = sorted(bigram_freq.items(), key=lambda x: -x[1])
@@ -376,11 +416,11 @@ def _generate_llm_queries(
 # Embedder (shared cache)
 # ---------------------------------------------------------------------------
 
-_embedder_cache: Optional[object] = None
+_embedder_cache: object | None = None
 _embedder_tried = False
 
 
-def _get_embedder() -> Optional[object]:
+def _get_embedder() -> object | None:
     """Return a sentence-transformers model, or None if not installed.
 
     Returns:
@@ -392,6 +432,7 @@ def _get_embedder() -> Optional[object]:
     _embedder_tried = True
     try:
         from sentence_transformers import SentenceTransformer  # type: ignore[import]
+
         _embedder_cache = SentenceTransformer("all-MiniLM-L6-v2")
     except ImportError:
         logger.warning(

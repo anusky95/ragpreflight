@@ -60,7 +60,5 @@ def get_profile(name: str) -> dict[str, Any]:
     name = name.lower()
     if name not in PROFILES:
         valid = ", ".join(sorted(set(PROFILES.keys())))
-        raise ValueError(
-            f"Unknown profile '{name}'. Valid profiles are: {valid}"
-        )
+        raise ValueError(f"Unknown profile '{name}'. Valid profiles are: {valid}")
     return PROFILES[name]
