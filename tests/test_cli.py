@@ -1,4 +1,4 @@
-"""Tests for ragcheck CLI commands."""
+"""Tests for ragpreflight CLI commands."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class TestVersion:
     def test_version_flag(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "RAGCheck" in result.output or "0.1.0" in result.output
+        assert "ragpreflight" in result.output
 
     def test_short_version_flag(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["-V"])
@@ -31,7 +31,7 @@ class TestScanCommand:
     def test_scan_txt_succeeds(self, runner: CliRunner, sample_txt: Path) -> None:
         result = runner.invoke(main, ["scan", str(sample_txt)])
         assert result.exit_code in (0, 1)  # 1 is OK if there are critical issues
-        assert "RAGCheck" in result.output or "Score" in result.output
+        assert "ragpreflight" in result.output or "Score" in result.output
 
     def test_scan_json_output(self, runner: CliRunner, sample_txt: Path) -> None:
         result = runner.invoke(main, ["scan", str(sample_txt), "--json"])
@@ -68,7 +68,7 @@ class TestScanCommand:
         assert result.exit_code in (0, 1)
         assert output_file.exists()
         content = output_file.read_text()
-        assert "RAGCheck" in content
+        assert "ragpreflight" in content
         assert "<html" in content
 
 
