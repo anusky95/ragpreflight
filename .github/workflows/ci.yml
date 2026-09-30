@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.python-version == '3.11'
-        run: pytest --cov=ragcheck --cov-report=xml -q -m "not slow"
+        run: pytest --cov=ragpreflight --cov-report=xml -q -m "not slow"
         continue-on-error: true
 
   lint:
@@ -60,5 +60,5 @@ jobs:
         run: ruff format --check src/ tests/
 
       - name: mypy
-        run: mypy src/ragcheck/
+        run: mypy src/ragpreflight/
         continue-on-error: true  # Type checking warnings don't fail the build initially
