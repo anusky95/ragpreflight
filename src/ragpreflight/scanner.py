@@ -431,7 +431,7 @@ def _scan_pdf(path: Path) -> _ScanResult:
         _ScanResult with all quality dimensions populated.
     """
     try:
-        import fitz  # PyMuPDF  # type: ignore[import]
+        import pymupdf as fitz  # type: ignore[import]
     except ImportError:
         raise ImportError(
             "PyMuPDF is required for PDF scanning. Install it with: pip install pymupdf"

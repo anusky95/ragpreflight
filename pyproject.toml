@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ragpreflight"
-version = "0.1.0"
+version = "0.1.1"
 description = "Pre-ingestion diagnostic for RAG knowledge bases, grounded in the Garani 2026 taxonomy of 33 RAG failure modes"
 readme = "README.md"
 license = { text = "MIT" }

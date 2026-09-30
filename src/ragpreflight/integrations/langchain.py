@@ -110,7 +110,7 @@ class RAGCheckLoader:
 
         if suffix == ".pdf":
             try:
-                import fitz  # type: ignore[import]
+                import pymupdf as fitz  # type: ignore[import]
                 doc = fitz.open(str(self.file_path))
                 for page_num in range(doc.page_count):
                     page_text = doc[page_num].get_text("text")

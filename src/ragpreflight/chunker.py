@@ -186,7 +186,7 @@ def _extract_text(path: Path, fmt: str) -> str:
 
 def _extract_pdf_text(path: Path) -> str:
     try:
-        import fitz  # type: ignore[import]
+        import pymupdf as fitz  # type: ignore[import]
         doc = fitz.open(str(path))
         pages = [doc[i].get_text("text") for i in range(doc.page_count)]
         doc.close()
