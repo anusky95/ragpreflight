@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-01
+
+### Fixed
+
+- **OCR false-positive elimination**: `broken_ligatures` regex matched every `f` and `i` in English; `mid_word_spaces` matched every space between lowercase words; `rn_m` matched legitimate words like "learning" and "government". All three now use dictionary-aware detection via a bundled 234K-word English wordlist (nltk corpus, gzipped). Only flags OCR artifacts when the corrected form IS a real word and the original IS NOT.
+- **Score inflation for unextractable documents**: A scanned PDF with 0% extractable text could score 70 due to metadata/structure scores. Added floor/ceiling logic: 0% extractability caps score at 20, OCR error rate >10% caps at 40, empty documents score 0.
+- **mid_word_space non-overlapping regex**: `re.finditer` consumed words greedily, missing adjacent broken words. Switched to token-pair iteration.
+- **rn_m double replacement**: Words like "cornrnittee" with two rn sequences now try both single and all-occurrence replacement.
+
+### Changed
+
+- **JSON output redesigned**: `DocumentReport.to_dict()` now returns flat, CI-friendly format with `verdict` ("ingest_ready"/"needs_review"/"reject"), `counts` summary, `failure_modes` as flat F-code list, `summary` instead of verbose prose. Filepath is basename-only.
+- **Class renames**: `RAGCheckLoader` → `RAGPreflightLoader`, `RAGCheckNodePostprocessor` → `RAGPreflightNodePostprocessor`. All docstrings updated from "RAGCheck" to "ragpreflight".
+
+### Added
+
+- **Dictionary-aware OCR detection** (`_wordlist.py`): Bundled gzipped English wordlist (234K words from nltk corpus). Falls back to nltk runtime, then to hardcoded common-word set.
+- **Header/footer noise detection**: Compares first/last lines across pages, flags when >=60% share the same text (F3 proxy).
+- **Page number artifact detection**: Regex matches "Page N of M", "- N -", standalone page numbers matching page position.
+- **Enhanced table detection**: Per-table page number, dimensions (rows x cols), content preview of first cells.
+- **GitHub Actions workflow example** in README for CI/CD integration with SARIF upload.
+- **olmOCR-bench external validation**: 175 PDFs across 7 difficulty categories confirm ragpreflight scores correlate with known OCR model difficulty. Added to README.
+
 ## [0.1.0] — 2026-09-29
 
 First public release. Grounded in Garani 2026 (doi:10.18653/v1/2026.trustnlp-main.27).
@@ -66,5 +89,6 @@ First public release. Grounded in Garani 2026 (doi:10.18653/v1/2026.trustnlp-mai
 - `scikit-learn` removed from `[full]` — was unused
 - Python minimum bumped to `>=3.10` (3.9 EOL)
 
-[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/anusky95/ragpreflight/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anusky95/ragpreflight/releases/tag/v0.1.0

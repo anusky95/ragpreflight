@@ -1,4 +1,4 @@
-"""Corpus-level analysis for RAGCheck.
+"""Corpus-level analysis for ragpreflight.
 
 Scans a directory of documents, detects near-duplicates, temporal staleness,
 contradiction candidates, and generates aggregate statistics.

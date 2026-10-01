@@ -124,39 +124,66 @@ class DocumentReport:
         """True when there are no CRITICAL issues."""
         return len(self.critical_issues) == 0
 
+    @property
+    def verdict(self) -> str:
+        """Verdict string based on score and critical issues."""
+        if self.critical_issues:
+            return "reject"
+        if self.score >= 60:
+            return "ingest_ready"
+        return "needs_review"
+
     def to_dict(self) -> dict:
-        """Serialize to a plain dict suitable for JSON output."""
+        """Serialize to a flat, CI-friendly dict suitable for JSON output."""
+        import os
+
         return {
-            "filepath": self.filepath,
-            "score": self.score,
-            "file_format": self.file_format,
-            "file_size_bytes": self.file_size_bytes,
-            "page_count": self.page_count,
+            "ragpreflight_version": _get_version(),
+            "file": os.path.basename(self.filepath),
+            "format": self.file_format,
+            "pages": self.page_count,
+            "size_bytes": self.file_size_bytes,
             "text_extractable_ratio": round(self.text_extractable_ratio, 4),
+            "score": self.score,
+            "verdict": self.verdict,
+            "counts": {
+                "critical": len(self.critical_issues),
+                "warning": len(self.warnings),
+                "info": len([i for i in self.issues if i.severity == Severity.INFO]),
+            },
             "issues": [_issue_to_dict(i) for i in self.issues],
         }
 
 
+def _get_version() -> str:
+    try:
+        from ragpreflight import __version__
+
+        return __version__
+    except Exception:
+        return "unknown"
+
+
 def _issue_to_dict(i: Issue) -> dict:
-    return {
+    result: dict = {
         "category": i.category.value,
         "severity": i.severity.value,
-        "message": i.message,
+        "summary": _extract_summary(i.message),
         "location": i.location,
-        "context": i.context,
-        "suggestion": i.suggestion,
-        "taxonomy_refs": [
-            {
-                "mode_id": ref.mode_id,
-                "mode_name": ref.mode_name,
-                "definition": ref.definition,
-                "relationship": ref.relationship,
-                "confidence": ref.confidence,
-                "explanation": ref.explanation,
-            }
-            for ref in i.taxonomy_refs
-        ],
+        "fix": i.suggestion,
+        "failure_modes": [ref.mode_id for ref in i.taxonomy_refs],
     }
+    if i.context:
+        result["context"] = i.context
+    return result
+
+
+def _extract_summary(message: str) -> str:
+    """Extract a one-line summary from a potentially multi-line message."""
+    first_line = message.split("\n")[0].strip()
+    if first_line.endswith(":"):
+        first_line = first_line[:-1]
+    return first_line
 
 
 @dataclass
@@ -221,11 +248,17 @@ class CorpusReport:
         return sorted(self.documents, key=lambda d: d.score)[:cutoff]
 
     def to_dict(self) -> dict:
-        """Serialize to a plain dict suitable for JSON output."""
+        """Serialize to a flat, CI-friendly dict suitable for JSON output."""
         return {
+            "ragpreflight_version": _get_version(),
             "directory": self.directory,
             "total_documents": self.total_documents,
             "average_score": round(self.average_score, 2),
+            "counts": {
+                "reject": len([d for d in self.documents if d.verdict == "reject"]),
+                "needs_review": len([d for d in self.documents if d.verdict == "needs_review"]),
+                "ingest_ready": len([d for d in self.documents if d.verdict == "ingest_ready"]),
+            },
             "duplicate_groups": self.duplicate_groups,
             "corpus_issues": [_issue_to_dict(i) for i in self.corpus_issues],
             "documents": [d.to_dict() for d in self.documents],

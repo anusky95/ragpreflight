@@ -61,7 +61,7 @@ def detect_file_format(path: str | Path) -> str:
 
 
 def is_supported(path: str | Path) -> bool:
-    """Return True if the file format is supported by RAGCheck.
+    """Return True if the file format is supported by ragpreflight.
 
     Args:
         path: Path to the file.

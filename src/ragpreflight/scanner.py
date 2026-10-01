@@ -273,7 +273,15 @@ def _compute_score(result: _ScanResult) -> int:
         structural_integrity: 20%
         metadata_completeness: 10%
         content_density: 15%
+
+    Floor/ceiling logic:
+        - 0% extractable text → score capped at 20 (scanned PDF with no OCR)
+        - OCR error rate > 10% → score capped at 40 (severely corrupted text)
+        - Empty document (0 content density) → score 0
     """
+    if result.content_density == 0.0 and result.text_extractable_ratio == 0.0:
+        return 0
+
     ocr_cleanliness = 1.0 - result.ocr_error_rate
     raw = (
         result.text_extractable_ratio * SCORE_WEIGHTS["text_extractability"]
@@ -282,7 +290,14 @@ def _compute_score(result: _ScanResult) -> int:
         + result.metadata_score * SCORE_WEIGHTS["metadata_completeness"]
         + result.content_density * SCORE_WEIGHTS["content_density"]
     )
-    return max(0, min(100, round(raw * 100)))
+    score = max(0, min(100, round(raw * 100)))
+
+    if result.text_extractable_ratio == 0.0:
+        score = min(score, 20)
+    if result.ocr_error_rate > 0.10:
+        score = min(score, 40)
+
+    return score
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +307,9 @@ def _compute_score(result: _ScanResult) -> int:
 
 def _count_ocr_errors(text: str) -> int:
     """Count OCR substitution pattern matches in text.
+
+    Combines regex-based detection (for patterns with low false-positive rates)
+    with dictionary-aware detection (for rn→m and mid-word space patterns).
 
     Args:
         text: Plain text to scan.
@@ -308,7 +326,65 @@ def _count_ocr_errors(text: str) -> int:
             total += matches
         except re.error:
             logger.debug("Regex error for OCR pattern '%s'", key)
+    total += len(_find_rn_m_artifacts(text))
+    total += len(_find_mid_word_space_artifacts(text))
     return total
+
+
+def _find_rn_m_artifacts(text: str) -> list[tuple[str, str]]:
+    """Detect rn→m OCR artifacts using dictionary lookup.
+
+    For each word containing 'rn', checks if replacing 'rn' with 'm' produces
+    a valid dictionary word while the original is NOT a valid word. Tries both
+    single and all-occurrence replacement to handle words like 'cornrnittee'.
+
+    Returns:
+        List of (original_word, corrected_word) tuples.
+    """
+    from ragpreflight._wordlist import is_real_word
+
+    seen: set[str] = set()
+    findings: list[tuple[str, str]] = []
+    for match in re.finditer(r"\b([a-zA-Z]*rn[a-zA-Z]*)\b", text):
+        word = match.group(1)
+        lower = word.lower()
+        if len(word) < 4 or lower in seen or is_real_word(lower):
+            continue
+        seen.add(lower)
+        replaced_first = lower.replace("rn", "m", 1)
+        replaced_all = lower.replace("rn", "m")
+        if is_real_word(replaced_all):
+            findings.append((word, replaced_all))
+        elif is_real_word(replaced_first):
+            findings.append((word, replaced_first))
+    return findings
+
+
+def _find_mid_word_space_artifacts(text: str) -> list[tuple[str, str]]:
+    """Detect spaces inserted mid-word during OCR using dictionary lookup.
+
+    Iterates over all consecutive pairs of lowercase tokens separated by
+    exactly one space. Flags when joining produces a valid word and at least
+    one part is NOT a valid word on its own.
+
+    Returns:
+        List of (original_spaced, corrected_joined) tuples.
+    """
+    from ragpreflight._wordlist import is_real_word
+
+    tokens = [(m.start(), m.end(), m.group()) for m in re.finditer(r"[a-z]{2,}", text)]
+    findings: list[tuple[str, str]] = []
+    for i in range(len(tokens) - 1):
+        _start1, end1, left = tokens[i]
+        start2, _end2, right = tokens[i + 1]
+        if text[end1:start2] != " ":
+            continue
+        joined = left + right
+        if len(joined) < 4:
+            continue
+        if is_real_word(joined) and (not is_real_word(left) or not is_real_word(right)):
+            findings.append((f"{left} {right}", joined))
+    return findings
 
 
 def _ocr_error_rate(text: str) -> float:
@@ -329,6 +405,10 @@ def _ocr_error_rate(text: str) -> float:
 def _build_ocr_issues(text: str, location_prefix: str = "") -> list[Issue]:
     """Detect OCR errors and return Issue objects.
 
+    Combines regex-based detection (low false-positive patterns like l/I/1,
+    O/0, ligatures, mojibake) with dictionary-aware detection (rn→m,
+    mid-word spaces) to minimise false positives.
+
     Args:
         text: Plain text to analyse.
         location_prefix: Prefix for location strings (e.g. "page 3").
@@ -340,6 +420,7 @@ def _build_ocr_issues(text: str, location_prefix: str = "") -> list[Issue]:
     found_patterns: list[str] = []
     snippets: list[str] = []
 
+    # --- Regex-based patterns (only the ones with low false-positive rates) ---
     for key, pattern in OCR_SUBSTITUTION_PATTERNS.items():
         if pattern is None:
             continue
@@ -355,6 +436,21 @@ def _build_ocr_issues(text: str, location_prefix: str = "") -> list[Issue]:
                     snippets.append(f'"{raw}"')
         except re.error:
             pass
+
+    # --- Dictionary-aware patterns (rn→m, mid-word spaces) ---
+    rn_findings = _find_rn_m_artifacts(text)
+    if rn_findings:
+        found_patterns.append("rn_m")
+        if len(snippets) < 3:
+            orig, corrected = rn_findings[0]
+            snippets.append(f'"{orig}" → "{corrected}"')
+
+    space_findings = _find_mid_word_space_artifacts(text)
+    if space_findings:
+        found_patterns.append("mid_word_spaces")
+        if len(snippets) < 3:
+            orig, corrected = space_findings[0]
+            snippets.append(f'"{orig}" → "{corrected}"')
 
     if found_patterns:
         pattern_lines: list[str] = []
@@ -540,6 +636,11 @@ def _scan_pdf(path: Path) -> _ScanResult:
     # Global OCR rate
     ocr_rate = _ocr_error_rate(full_text)
 
+    # Header/footer noise and page number artifacts
+    if len(page_texts) >= 3:
+        issues.extend(_detect_header_footer_noise(page_texts))
+    issues.extend(_detect_page_number_artifacts(page_texts))
+
     # Metadata
     metadata = doc.metadata or {}
     doc.close()
@@ -581,6 +682,109 @@ def _scan_pdf(path: Path) -> _ScanResult:
     )
 
 
+def _detect_header_footer_noise(page_texts: list[str]) -> list[Issue]:
+    """Detect repeated header/footer text across pages.
+
+    Compares the first and last lines of each page. Lines that repeat
+    across ≥60% of pages are likely headers/footers that will pollute chunks.
+
+    Args:
+        page_texts: List of per-page text strings (at least 3 pages).
+
+    Returns:
+        List of issues (may be empty).
+    """
+    n_pages = len(page_texts)
+    if n_pages < 3:
+        return []
+
+    first_lines: dict[str, int] = {}
+    last_lines: dict[str, int] = {}
+    for text in page_texts:
+        lines = [ln.strip() for ln in text.strip().split("\n") if ln.strip()]
+        if not lines:
+            continue
+        fl = lines[0][:80]
+        ll = lines[-1][:80]
+        if len(fl) >= 5:
+            first_lines[fl] = first_lines.get(fl, 0) + 1
+        if len(ll) >= 5 and ll != fl:
+            last_lines[ll] = last_lines.get(ll, 0) + 1
+
+    threshold = max(3, int(n_pages * 0.6))
+    repeated = []
+    for line, count in {**first_lines, **last_lines}.items():
+        if count >= threshold:
+            repeated.append(line)
+
+    if repeated:
+        samples = "; ".join(f'"{r[:40]}"' for r in repeated[:3])
+        return [
+            Issue(
+                category=IssueCategory.STRUCTURE,
+                severity=Severity.INFO,
+                message=(
+                    f"Repeated header/footer text detected across {len(repeated)} "
+                    f"pattern(s) on ≥{threshold} pages."
+                ),
+                context=samples,
+                suggestion=(
+                    "Strip repeated headers/footers before chunking to avoid "
+                    "polluting embeddings with boilerplate text."
+                ),
+            )
+        ]
+    return []
+
+
+def _detect_page_number_artifacts(page_texts: list[str]) -> list[Issue]:
+    """Detect page number strings that will become noise tokens in chunks.
+
+    Looks for patterns like 'Page 3 of 10', '- 5 -', standalone numbers
+    at line boundaries that match the page position.
+
+    Args:
+        page_texts: List of per-page text strings.
+
+    Returns:
+        List of issues (may be empty).
+    """
+    page_num_count = 0
+    for i, text in enumerate(page_texts):
+        page_1 = i + 1
+        lines = [ln.strip() for ln in text.strip().split("\n") if ln.strip()]
+        if not lines:
+            continue
+        check_lines = []
+        if lines:
+            check_lines.append(lines[0])
+        if len(lines) > 1:
+            check_lines.append(lines[-1])
+
+        for ln in check_lines:
+            if re.match(
+                rf"^(?:page\s+{page_1}\s*(?:of\s+\d+)?|-\s*{page_1}\s*-|{page_1}\s*$)",
+                ln,
+                re.IGNORECASE,
+            ):
+                page_num_count += 1
+                break
+
+    if page_num_count >= 3:
+        return [
+            Issue(
+                category=IssueCategory.STRUCTURE,
+                severity=Severity.INFO,
+                message=(
+                    f"Page number artifacts detected on {page_num_count} page(s). "
+                    f"These become noise tokens after chunking."
+                ),
+                suggestion="Strip page numbers during text extraction before chunking.",
+            )
+        ]
+    return []
+
+
 def _score_pdf_metadata(metadata: dict, issues: list[Issue]) -> float:
     """Score PDF metadata completeness and append issues.
 
@@ -612,6 +816,9 @@ def _score_pdf_metadata(metadata: dict, issues: list[Issue]) -> float:
 def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
     """Use pdfplumber to detect tables and structural issues.
 
+    Reports per-table location (page, dimensions, content preview) so users
+    can see exactly where tables are and how they'll affect chunking.
+
     Args:
         path: Path to the PDF file.
         issues: Issues list to append to (mutated in place).
@@ -622,34 +829,55 @@ def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
     try:
         import pdfplumber  # type: ignore[import]
     except ImportError:
-        return 1.0  # Can't check, assume OK
+        return 1.0
 
+    table_details: list[str] = []
     table_count = 0
     try:
         with pdfplumber.open(str(path)) as pdf:
-            for page in pdf.pages:
+            for page_num, page in enumerate(pdf.pages, 1):
                 try:
-                    tables = page.extract_tables()
-                    if tables:
-                        table_count += len(tables)
+                    tables = page.find_tables()
+                    if not tables:
+                        continue
+                    for tbl in tables:
+                        table_count += 1
+                        rows = tbl.extract()
+                        n_rows = len(rows) if rows else 0
+                        n_cols = len(rows[0]) if rows and rows[0] else 0
+                        preview = ""
+                        if rows and rows[0]:
+                            first_cells = [
+                                str(c or "").strip()[:30].replace("\n", " ")
+                                for c in rows[0][:3]
+                            ]
+                            preview = " | ".join(c for c in first_cells if c)
+                        detail = f"pg {page_num}: {n_rows}×{n_cols}"
+                        if preview:
+                            detail += f' "{preview}"'
+                        table_details.append(detail)
                 except Exception:
                     pass
     except Exception:
         return 1.0
 
     if table_count > 0:
+        detail_lines = "; ".join(table_details[:10])
+        if len(table_details) > 10:
+            detail_lines += f" (+{len(table_details) - 10} more)"
+
         issues.append(
             Issue(
                 category=IssueCategory.STRUCTURE,
                 severity=Severity.WARNING,
                 message=f"{table_count} table(s) detected. Tables often chunk poorly as plain text.",
+                location=detail_lines,
                 suggestion=(
                     "Use a table-aware extractor (e.g. pdfplumber, Camelot, AWS Textract) "
                     "and convert tables to Markdown or CSV before chunking."
                 ),
             )
         )
-        # Penalise slightly for tables (they need special handling)
         return max(0.6, 1.0 - (table_count * 0.05))
 
     return 1.0

@@ -149,6 +149,49 @@ score=$(ragpreflight score my_doc.pdf)
 [ "$score" -ge 60 ] || exit 1
 ```
 
+### GitHub Actions integration
+
+```yaml
+# .github/workflows/rag-quality.yml
+name: RAG Document Quality Gate
+
+on:
+  pull_request:
+    paths: ['knowledge_base/**', 'docs/**']
+
+jobs:
+  ragpreflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install ragpreflight
+
+      - name: Audit knowledge base
+        run: |
+          ragpreflight audit ./knowledge_base/ --json > audit.json
+          ragpreflight audit ./knowledge_base/ --format sarif --output results.sarif
+
+      - name: Quality gate — fail on critical issues
+        run: |
+          score=$(ragpreflight score ./knowledge_base/ 2>/dev/null)
+          echo "Corpus average score: $score"
+          if [ "$score" -lt 60 ]; then
+            echo "::error::RAG corpus score $score is below threshold (60)"
+            exit 1
+          fi
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+```
+
 ### SARIF output for GitHub Code Scanning
 
 ```bash

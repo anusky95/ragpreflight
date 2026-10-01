@@ -1,12 +1,12 @@
-"""LlamaIndex integration for RAGCheck.
+"""LlamaIndex integration for ragpreflight.
 
-Provides a RAGCheck node post-processor that filters out low-quality nodes
+Provides a ragpreflight node post-processor that filters out low-quality nodes
 from a retrieval result, and a document validator that gates ingestion.
 
 Usage:
-    from ragpreflight.integrations.llamaindex import RAGCheckNodePostprocessor
+    from ragpreflight.integrations.llamaindex import RAGPreflightNodePostprocessor
 
-    postprocessor = RAGCheckNodePostprocessor(min_score=60)
+    postprocessor = RAGPreflightNodePostprocessor(min_score=60)
     # Use in a query engine:
     query_engine = index.as_query_engine(node_postprocessors=[postprocessor])
 
@@ -24,10 +24,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-class RAGCheckNodePostprocessor:
+class RAGPreflightNodePostprocessor:
     """A LlamaIndex node post-processor that drops low-quality retrieved nodes.
 
-    Nodes whose source document has a RAGCheck score below ``min_score`` are
+    Nodes whose source document has a ragpreflight score below ``min_score`` are
     removed from the retrieval result to prevent low-quality content from
     reaching the LLM.
 
@@ -36,7 +36,7 @@ class RAGCheckNodePostprocessor:
 
     Args:
         min_score: Minimum acceptable readiness score (0–100). Default 60.
-        profile: RAGCheck quality profile name. Default "standard".
+        profile: ragpreflight quality profile name. Default "standard".
     """
 
     def __init__(self, min_score: int = 60, profile: str = "standard") -> None:
@@ -72,7 +72,7 @@ class RAGCheckNodePostprocessor:
                     report = scan_document(source_path)
                     self._score_cache[source_path] = report.score
                 except Exception as exc:
-                    logger.debug("RAGCheck scan failed for '%s': %s", source_path, exc)
+                    logger.debug("ragpreflight scan failed for '%s': %s", source_path, exc)
                     self._score_cache[source_path] = 100  # Allow on error
 
             score = self._score_cache[source_path]
@@ -80,7 +80,7 @@ class RAGCheckNodePostprocessor:
                 filtered.append(node_with_score)
             else:
                 logger.info(
-                    "RAGCheck dropped node from '%s' (score %d < %d)",
+                    "ragpreflight dropped node from '%s' (score %d < %d)",
                     source_path,
                     score,
                     self.min_score,
@@ -108,7 +108,7 @@ def validate_documents(
     Args:
         file_paths: Paths to documents to validate.
         min_score: Minimum acceptable readiness score (0–100). Default 60.
-        profile: RAGCheck quality profile. Default "standard".
+        profile: ragpreflight quality profile. Default "standard".
 
     Returns:
         List of Path objects for documents that passed the quality threshold.
@@ -124,13 +124,13 @@ def validate_documents(
                 passing.append(path)
             else:
                 logger.warning(
-                    "RAGCheck: '%s' failed quality gate (score %d < %d) — %d issue(s) detected.",
+                    "ragpreflight: '%s' failed quality gate (score %d < %d) — %d issue(s) detected.",
                     path.name,
                     report.score,
                     min_score,
                     len(report.issues),
                 )
         except Exception as exc:
-            logger.warning("RAGCheck: could not scan '%s': %s", path, exc)
+            logger.warning("ragpreflight: could not scan '%s': %s", path, exc)
 
     return passing

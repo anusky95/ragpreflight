@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for RAGCheck tests."""
+"""Shared pytest fixtures for ragpreflight tests."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Config file loader for RAGCheck (.ragpreflight.toml in TOML format).
+"""Config file loader for ragpreflight (.ragpreflight.toml in TOML format).
 
 Searches for .ragpreflight.toml in the current directory, then HOME directory.
 CLI flags always override config file values.

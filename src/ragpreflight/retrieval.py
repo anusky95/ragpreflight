@@ -1,4 +1,4 @@
-"""Retrieval simulation module for RAGCheck.
+"""Retrieval simulation module for ragpreflight.
 
 Generates synthetic queries from document content and tests how well chunks
 are retrieved, surfacing dead chunks and query failure rates.

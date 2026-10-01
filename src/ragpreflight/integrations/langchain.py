@@ -1,17 +1,17 @@
-"""LangChain integration for RAGCheck.
+"""LangChain integration for ragpreflight.
 
-Wraps RAGCheck's scanner as a LangChain DocumentLoader that gates ingestion
+Wraps ragpreflight's scanner as a LangChain DocumentLoader that gates ingestion
 on a minimum readiness score. Documents below the threshold raise a ValueError
 instead of being loaded.
 
 Usage:
-    from ragpreflight.integrations.langchain import RAGCheckLoader
+    from ragpreflight.integrations.langchain import RAGPreflightLoader
 
-    loader = RAGCheckLoader("document.pdf", min_score=70, profile="standard")
+    loader = RAGPreflightLoader("document.pdf", min_score=70, profile="standard")
     docs = loader.load()   # raises ValueError if score < min_score
 
     # Or as a filter in a pipeline:
-    loader = RAGCheckLoader("document.pdf", min_score=60, raise_on_fail=False)
+    loader = RAGPreflightLoader("document.pdf", min_score=60, raise_on_fail=False)
     docs = loader.load()   # returns [] if document fails quality check
 """
 
@@ -24,8 +24,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-class RAGCheckLoader:
-    """A LangChain-compatible document loader that gates on RAGCheck score.
+class RAGPreflightLoader:
+    """A LangChain-compatible document loader that gates on ragpreflight score.
 
     Requires langchain-core to be installed:
         pip install langchain-core
@@ -33,7 +33,7 @@ class RAGCheckLoader:
     Args:
         file_path: Path to the document to load.
         min_score: Minimum acceptable readiness score (0–100). Default 60.
-        profile: RAGCheck quality profile name. Default "standard".
+        profile: ragpreflight quality profile name. Default "standard".
         raise_on_fail: If True (default), raise ValueError on quality failure.
                        If False, return an empty list instead.
     """
@@ -65,7 +65,7 @@ class RAGCheckLoader:
             from langchain_core.documents import Document  # type: ignore[import]
         except ImportError:
             raise ImportError(
-                "langchain-core is required for RAGCheckLoader. "
+                "langchain-core is required for RAGPreflightLoader. "
                 "Install it with: pip install langchain-core"
             ) from None
 
@@ -75,7 +75,7 @@ class RAGCheckLoader:
 
         if report.score < self.min_score:
             msg = (
-                f"RAGCheck quality gate FAILED: '{self.file_path.name}' scored "
+                f"ragpreflight quality gate FAILED: '{self.file_path.name}' scored "
                 f"{report.score}/100 (minimum {self.min_score}). "
                 f"{len(report.critical_issues)} critical issue(s) detected."
             )
@@ -84,7 +84,7 @@ class RAGCheckLoader:
             logger.warning(msg)
             return []
 
-        # Attach RAGCheck metadata to each LangChain document
+        # Attach ragpreflight metadata to each LangChain document
         metadata = {
             "source": str(self.file_path),
             "ragpreflight_score": report.score,

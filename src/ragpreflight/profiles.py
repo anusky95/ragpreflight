@@ -1,4 +1,4 @@
-"""Threshold profiles for RAGCheck quality gates.
+"""Threshold profiles for ragpreflight quality gates.
 
 Usage:
     from ragpreflight.profiles import get_profile, PROFILES

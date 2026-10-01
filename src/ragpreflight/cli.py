@@ -1,4 +1,4 @@
-"""Click CLI entry point for RAGCheck.
+"""Click CLI entry point for ragpreflight.
 
 Commands:
     ragpreflight scan <file>         -- single document scan
@@ -38,7 +38,7 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 
 )
 @click.pass_context
 def main(ctx: click.Context, verbose: bool) -> None:
-    """RAGCheck — score document readiness for RAG pipelines.
+    """ragpreflight — score document readiness for RAG pipelines.
 
     \b
     Config file: place a .ragpreflight.toml (TOML) in your project root or home

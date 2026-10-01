@@ -7,19 +7,19 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 OCR_SUBSTITUTION_PATTERNS: dict[str, str | None] = {
-    # Character confusions
+    # Character confusions (regex-safe patterns with low false-positive rate)
     "l_I_1": r"(?<=[a-z])[I1](?=[a-z])",  # "cIinical" → "clinical"
     "O_0": r"(?<=[a-z])0(?=[a-z])",  # "pr0tocol" → "protocol"
-    "rn_m": r"(?<=[a-z])rn(?=[a-z])",  # "inforrnation" → "information"
-    "fi_fl_ligature": r"[ﬁﬂ]",  # Ligature artifacts
-    "broken_ligatures": r"(?<=\w)[ffi](?=\w)",  # Split ligatures
-    # Spacing artifacts
-    "mid_word_spaces": r"(?<=[a-z]) (?=[a-z]{2,})",  # "pati ent" → "patient"
+    "fi_fl_ligature": r"[ﬁﬂ]",  # Ligature artifacts (Unicode chars)
     # Encoding artifacts
     "mojibake": r"[ÃÂÃÂ¢ÃÂ©ÃÂ©]",  # UTF-8 decoded as Latin-1
     # Common OCR numeral/letter confusions in context
     "zero_as_o": r"\b0[a-z]+\b",  # "0ne" instead of "one"
-    "merged_words": None,  # Detected via dictionary lookup, not regex
+    # Dictionary-aware patterns (detected via _wordlist.py, not regex)
+    "rn_m": None,
+    "mid_word_spaces": None,
+    "broken_ligatures": None,  # Removed: [ffi] char-class matched every f/i in English
+    "merged_words": None,
 }
 
 # Human-readable descriptions for each OCR pattern, shown in issue output.

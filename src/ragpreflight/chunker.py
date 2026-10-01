@@ -1,4 +1,4 @@
-"""Chunk analysis module for RAGCheck.
+"""Chunk analysis module for ragpreflight.
 
 Analyses chunked text for coherence, structural breaks, and boundary quality.
 
