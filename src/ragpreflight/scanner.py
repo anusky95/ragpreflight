@@ -848,8 +848,7 @@ def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
                         preview = ""
                         if rows and rows[0]:
                             first_cells = [
-                                str(c or "").strip()[:30].replace("\n", " ")
-                                for c in rows[0][:3]
+                                str(c or "").strip()[:30].replace("\n", " ") for c in rows[0][:3]
                             ]
                             preview = " | ".join(c for c in first_cells if c)
                         detail = f"pg {page_num}: {n_rows}×{n_cols}"
