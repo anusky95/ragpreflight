@@ -328,3 +328,39 @@ SEVERITY_COLOURS = {
     "warning": "yellow",
     "info": "cyan",
 }
+
+# ---------------------------------------------------------------------------
+# Tool / library suggestions per issue category
+# (name, description, install command)
+# ---------------------------------------------------------------------------
+
+TOOL_SUGGESTIONS: dict[str, list[tuple[str, str, str]]] = {
+    "ocr": [
+        ("pytesseract", "OCR engine for scanned documents", "pip install pytesseract"),
+        ("doctr", "Deep-learning document text recognition", "pip install python-doctr[torch]"),
+    ],
+    "encoding": [
+        ("ftfy", "Fix Unicode encoding errors automatically", "pip install ftfy"),
+    ],
+    "structure": [
+        ("camelot-py", "Table extraction from PDFs", "pip install camelot-py[cv]"),
+        ("unstructured", "Layout-aware document parsing", "pip install unstructured"),
+    ],
+    "content": [
+        (
+            "presidio",
+            "PII detection and redaction",
+            "pip install presidio-analyzer presidio-anonymizer",
+        ),
+        ("nougat-ocr", "Math-aware PDF extraction (Meta AI)", "pip install nougat-ocr"),
+    ],
+    "metadata": [
+        ("pikepdf", "Edit PDF metadata programmatically", "pip install pikepdf"),
+    ],
+    "chunking": [
+        ("langchain", "Structure-aware text splitters", "pip install langchain-text-splitters"),
+    ],
+    "duplication": [
+        ("datasketch", "MinHash LSH near-duplicate detection", "pip install datasketch"),
+    ],
+}

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import html as html_mod
 import json
+import math
+import re
 import textwrap
 from pathlib import Path
 
-from ragpreflight._constants import SEVERITY_COLOURS
+from ragpreflight._constants import SEVERITY_COLOURS, TOOL_SUGGESTIONS
 from ragpreflight.models import CorpusReport, DocumentReport, Issue, Severity
 
 # ---------------------------------------------------------------------------
@@ -229,262 +232,430 @@ def _write_html(html: str, output: str | None) -> None:
         click.echo(html)
 
 
+# ---------------------------------------------------------------------------
+# HTML CSS (module-level constant — not an f-string, no brace escaping)
+# ---------------------------------------------------------------------------
+
+_HTML_CSS = """<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f8f7f5; --fg: #1c1917; --fg-secondary: #57534e; --fg-muted: #a8a29e;
+  --surface: #ffffff; --surface-raised: #fafaf9;
+  --border: #e7e5e4; --border-light: #f0efed;
+  --accent: #7c3aed; --accent-soft: #ede9fe;
+  --green: #16a34a; --green-soft: #dcfce7;
+  --amber: #d97706; --amber-soft: #fef3c7;
+  --red: #dc2626; --red-soft: #fee2e2;
+  --blue: #2563eb; --blue-soft: #dbeafe;
+  --code-bg: #1e1b2e; --code-fg: #e2dff0;
+  --highlight-bg: #fbbf24; --highlight-fg: #1c1917;
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1917; --fg: #e7e5e4; --fg-secondary: #a8a29e; --fg-muted: #78716c;
+    --surface: #292524; --surface-raised: #1c1b19;
+    --border: #44403c; --border-light: #353330;
+    --accent: #a78bfa; --accent-soft: #2e1065;
+    --green: #4ade80; --green-soft: #14532d;
+    --amber: #fbbf24; --amber-soft: #451a03;
+    --red: #f87171; --red-soft: #450a0a;
+    --blue: #60a5fa; --blue-soft: #1e3a5f;
+    --code-bg: #0f0d1a; --code-fg: #d4d0e8;
+    --highlight-bg: #854d0e; --highlight-fg: #fef3c7;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1917; --fg: #e7e5e4; --fg-secondary: #a8a29e; --fg-muted: #78716c;
+  --surface: #292524; --surface-raised: #1c1b19;
+  --border: #44403c; --border-light: #353330;
+  --accent: #a78bfa; --accent-soft: #2e1065;
+  --green: #4ade80; --green-soft: #14532d;
+  --amber: #fbbf24; --amber-soft: #451a03;
+  --red: #f87171; --red-soft: #450a0a;
+  --blue: #60a5fa; --blue-soft: #1e3a5f;
+  --code-bg: #0f0d1a; --code-fg: #d4d0e8;
+  --highlight-bg: #854d0e; --highlight-fg: #fef3c7;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg);
+  max-width: 800px; margin: 0 auto; padding: 32px 20px; line-height: 1.55;
+}
+*, *::before, *::after { box-sizing: border-box; }
+h1, h2, h3 { text-wrap: balance; }
+
+/* Header */
+.rp-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+.rp-logo {
+  flex-shrink: 0; width: 48px; height: 48px; background: var(--accent);
+  border-radius: 12px; display: grid; place-items: center; color: #fff;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 18px; letter-spacing: -1px;
+}
+.rp-header h1 { font-size: 1.35rem; font-weight: 700; margin: 0; color: var(--fg); }
+.rp-header .subtitle { font-size: 0.85rem; color: var(--fg-muted); margin-top: 2px; }
+
+/* Score card */
+.score-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px 32px; display: flex; align-items: center; gap: 32px; margin-bottom: 20px;
+}
+.gauge { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.gauge svg { width: 100%; height: 100%; }
+.gauge-text {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.gauge-num { font-size: 2.4rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.gauge-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); margin-top: 2px; }
+.score-details { min-width: 0; }
+.verdict-pill {
+  display: inline-block; padding: 4px 14px; border-radius: 20px;
+  font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.verdict-ready  { background: var(--green-soft); color: var(--green); }
+.verdict-review { background: var(--amber-soft); color: var(--amber); }
+.verdict-reject { background: var(--red-soft); color: var(--red); }
+.meta-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 4px 16px; margin-top: 14px;
+}
+.meta-item { display: flex; flex-direction: column; }
+.meta-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); }
+.meta-value { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Count chips */
+.counts-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
+.count-chip {
+  display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 10px;
+  font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.count-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.chip-critical { background: var(--red-soft); color: var(--red); }
+.chip-critical .dot { background: var(--red); }
+.chip-warning { background: var(--amber-soft); color: var(--amber); }
+.chip-warning .dot { background: var(--amber); }
+.chip-info { background: var(--blue-soft); color: var(--blue); }
+.chip-info .dot { background: var(--blue); }
+.chip-ok { background: var(--green-soft); color: var(--green); }
+.chip-ok .dot { background: var(--green); }
+
+/* Section header */
+.section-header {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--fg-muted); font-weight: 600; margin-bottom: 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-light);
+}
+
+/* Issue card */
+.issue-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 12px; overflow: hidden; transition: border-color 0.15s;
+}
+.issue-card:hover, .issue-card[open] { border-color: var(--accent); }
+.issue-card summary {
+  list-style: none; cursor: pointer; padding: 16px 20px;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.issue-card summary::-webkit-details-marker { display: none; }
+.issue-card summary::after {
+  content: ''; width: 20px; height: 20px; flex-shrink: 0; margin-left: auto;
+  background: var(--fg-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform 0.2s;
+}
+.issue-card[open] summary::after { transform: rotate(180deg); }
+.sev-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.sev-dot.warning { background: var(--amber); }
+.sev-dot.info { background: var(--blue); }
+.sev-dot.critical { background: var(--red); }
+.issue-title { font-weight: 600; font-size: 0.92rem; line-height: 1.4; }
+.issue-title .category-tag {
+  display: inline-block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 1px 7px; border-radius: 4px; background: var(--border-light);
+  color: var(--fg-secondary); font-weight: 500; vertical-align: 2px; margin-right: 4px;
+}
+.issue-body { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.issue-detail { font-size: 0.84rem; color: var(--fg-secondary); line-height: 1.6; white-space: pre-line; }
+
+/* Snippet block */
+.snippet-block {
+  background: var(--code-bg); border-radius: 10px; padding: 16px 18px;
+  position: relative; overflow-x: auto;
+}
+.snippet-label {
+  position: absolute; top: 8px; right: 12px; font-size: 0.65rem;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); opacity: 0.6;
+}
+.snippet-text {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem;
+  color: var(--code-fg); line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+}
+.snippet-text .hl {
+  background: var(--highlight-bg); color: var(--highlight-fg);
+  padding: 1px 3px; border-radius: 3px; font-weight: 500;
+}
+
+/* Impact block */
+.impact-block {
+  background: var(--surface-raised); border-left: 3px solid var(--amber);
+  border-radius: 0 8px 8px 0; padding: 12px 16px;
+}
+.impact-block.info-impact { border-left-color: var(--blue); }
+.impact-block h4 {
+  margin: 0; font-size: 0.78rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-secondary);
+}
+.impact-block p { margin: 4px 0 0; font-size: 0.84rem; color: var(--fg-secondary); line-height: 1.5; }
+
+/* Fix block */
+.fix-block {
+  display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px;
+  background: var(--green-soft); border-radius: 8px;
+}
+.fix-block .fix-icon { flex-shrink: 0; color: var(--green); font-weight: 700; font-size: 1rem; }
+.fix-block p { margin: 0; font-size: 0.84rem; color: var(--fg); line-height: 1.5; }
+
+/* Install block */
+.install-block {
+  background: var(--accent-soft); border-radius: 8px; padding: 12px 16px;
+}
+.install-block h4 {
+  margin: 0 0 8px; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent);
+}
+.install-item { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.install-item:last-child { margin-bottom: 0; }
+.install-item code {
+  background: var(--code-bg); color: var(--code-fg); padding: 3px 8px; border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; white-space: nowrap;
+}
+.install-item span { font-size: 0.8rem; color: var(--fg-secondary); }
+
+/* Taxonomy links */
+.tax-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.tax-link {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;
+  background: var(--accent-soft); border-radius: 6px;
+  font-size: 0.78rem; font-weight: 600; color: var(--accent);
+  text-decoration: none; transition: opacity 0.15s;
+}
+.tax-link:hover { opacity: 0.8; }
+
+/* Page map */
+.page-map { display: flex; gap: 3px; flex-wrap: wrap; margin: 8px 0; }
+.page-cell {
+  width: 36px; height: 28px; border-radius: 4px; display: grid; place-items: center;
+  font-size: 0.68rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border); background: var(--surface); color: var(--fg-muted);
+}
+.page-cell.hit { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); }
+.page-cell.hit-critical { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+.page-cell.hit-info { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+
+/* Score breakdown tiles */
+.breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.breakdown-tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+}
+.breakdown-tile .bl-label {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted);
+}
+.breakdown-tile .bl-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.breakdown-tile .bl-weight { font-size: 0.75rem; color: var(--fg-muted); }
+
+/* Coverage grid */
+.coverage-grid { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.cov-cell {
+  flex: 1; min-width: 80px; text-align: center; padding: 10px 8px; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 600;
+}
+.cov-cell strong { display: block; font-size: 1.3rem; }
+.cov-direct  { background: var(--green-soft); color: var(--green); }
+.cov-proxy   { background: var(--amber-soft); color: var(--amber); }
+.cov-risk    { background: var(--blue-soft); color: var(--blue); }
+.cov-runtime { background: var(--surface); border: 1px solid var(--border); color: var(--fg-muted); }
+
+/* Cannot-determine box */
+.cannot-box {
+  background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 20px; font-size: 0.84rem; color: var(--fg-secondary); line-height: 1.6;
+}
+.cannot-box ul { margin: 8px 0; padding-left: 20px; }
+.cannot-box li { margin-bottom: 6px; }
+.cannot-box a { color: var(--accent); }
+
+/* Corpus table */
+.corpus-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 0.88rem; }
+.corpus-table th {
+  background: var(--surface-raised); color: var(--fg-secondary); padding: 10px 14px;
+  text-align: left; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;
+  letter-spacing: 0.06em; border-bottom: 2px solid var(--border);
+}
+.corpus-table td { padding: 10px 14px; border-bottom: 1px solid var(--border-light); vertical-align: top; }
+.corpus-table tr:hover td { background: var(--surface-raised); }
+.doc-details summary { list-style: none; cursor: pointer; font-weight: 500; }
+.doc-details summary::-webkit-details-marker { display: none; }
+.doc-issues { padding: 10px 0 4px; }
+
+/* Footer */
+.rp-footer {
+  margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border-light);
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-size: 0.75rem; color: var(--fg-muted);
+}
+.rp-footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.rp-footer a:hover { text-decoration: underline; }
+
+@media (max-width: 500px) {
+  .score-card { flex-direction: column; gap: 16px; padding: 20px; }
+  .gauge { width: 100px; height: 100px; }
+  .meta-grid { grid-template-columns: repeat(2, 1fr); }
+  .counts-strip { flex-wrap: wrap; }
+  .breakdown-grid { grid-template-columns: 1fr; }
+}
+</style>"""
+
+
 def _build_html(title: str, body: str) -> str:
+    e = html_mod.escape
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title}</title>
-<style>
-  *, *::before, *::after {{ box-sizing: border-box; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          max-width: 1000px; margin: 40px auto; padding: 0 24px; color: #1a1a2e; line-height: 1.5; }}
-  h1 {{ font-size: 1.5rem; color: #1a1a2e; margin-bottom: 4px; }}
-  h2 {{ font-size: 1.1rem; color: #2c3e50; margin-top: 32px; border-bottom: 2px solid #ecf0f1; padding-bottom: 6px; }}
-  a {{ color: #2980b9; }}
-
-  /* Verdict banner */
-  .verdict {{ border-radius: 8px; padding: 16px 20px; margin: 20px 0; display: flex; align-items: center; gap: 16px; }}
-  .verdict-ready   {{ background: #eafaf1; border-left: 5px solid #27ae60; }}
-  .verdict-review  {{ background: #fef9e7; border-left: 5px solid #f39c12; }}
-  .verdict-fail    {{ background: #fdedec; border-left: 5px solid #e74c3c; }}
-  .verdict-label {{ font-size: 1.4rem; font-weight: 800; letter-spacing: 0.04em; }}
-  .verdict-ready  .verdict-label {{ color: #27ae60; }}
-  .verdict-review .verdict-label {{ color: #d68910; }}
-  .verdict-fail   .verdict-label {{ color: #c0392b; }}
-
-  /* Score bar */
-  .score-row {{ display: flex; align-items: center; gap: 12px; margin: 8px 0; }}
-  .score-num {{ font-size: 2.5rem; font-weight: 800; }}
-  .score-num.good {{ color: #27ae60; }}
-  .score-num.ok   {{ color: #f39c12; }}
-  .score-num.bad  {{ color: #e74c3c; }}
-  .bar {{ background: #ecf0f1; border-radius: 6px; height: 10px; width: 180px; }}
-  .bar-fill {{ height: 100%; border-radius: 6px; }}
-
-  /* Meta pills */
-  .meta {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }}
-  .pill {{ background: #f0f3f7; border-radius: 4px; padding: 2px 10px; font-size: 0.82rem; color: #555; }}
-
-  /* Issue badges */
-  .badge {{ display: inline-block; padding: 1px 7px; border-radius: 10px;
-             font-size: 0.72rem; font-weight: 700; text-transform: uppercase; vertical-align: middle; }}
-  .badge-critical {{ background: #fde8e8; color: #c0392b; }}
-  .badge-warning  {{ background: #fef9e7; color: #d68910; }}
-  .badge-info     {{ background: #eaf4fb; color: #1a5276; }}
-
-  /* Issue list */
-  .issue-list {{ list-style: none; padding: 0; margin: 0; }}
-  .issue-item {{ border: 1px solid #e8ecef; border-radius: 6px; margin-bottom: 8px; }}
-  .issue-summary {{ padding: 10px 14px; cursor: pointer; display: flex; align-items: flex-start; gap: 10px; }}
-  .issue-summary::-webkit-details-marker {{ display: none; }}
-  .issue-body {{ padding: 8px 14px 12px 14px; background: #f8f9fa;
-                  border-top: 1px solid #e8ecef; font-size: 0.88em; }}
-  .ctx {{ background: #f0f0f0; border-left: 3px solid #ccc; padding: 5px 10px; margin: 6px 0;
-           font-family: monospace; font-size: 0.85em; color: #555; border-radius: 0 3px 3px 0; }}
-  .fix {{ color: #27ae60; margin: 4px 0; }}
-  .tax-ref {{ background: #f8f4ff; border-left: 3px solid #7c4dff; padding: 6px 10px;
-              margin-top: 6px; border-radius: 0 4px 4px 0; font-size: 0.83em; }}
-  .tax-ref a {{ color: #7c4dff; font-weight: 600; text-decoration: none; }}
-  .tax-ref a:hover {{ text-decoration: underline; }}
-  .tax-rel {{ color: #888; }}
-  .tax-item {{ display: block; margin-bottom: 4px; }}
-  .tax-def {{ color: #555; display: block; margin-top: 3px; font-style: italic; }}
-  .tax-expl {{ color: #777; display: block; margin-top: 2px; }}
-
-  /* Top actions */
-  .actions {{ list-style: none; padding: 0; }}
-  .actions li {{ padding: 8px 0; border-bottom: 1px solid #f0f0f0; display: flex; align-items: flex-start; gap: 10px; }}
-  .actions li:last-child {{ border-bottom: none; }}
-  .action-body {{ flex: 1; }}
-  .action-file {{ font-weight: 600; font-size: 0.9em; }}
-  .action-fix {{ color: #555; font-size: 0.85em; margin-top: 2px; }}
-
-  /* Table */
-  table {{ width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9em; }}
-  th {{ background: #2c3e50; color: white; padding: 9px 12px; text-align: left; font-weight: 600; }}
-  td {{ padding: 8px 12px; border-bottom: 1px solid #ecf0f1; vertical-align: top; }}
-  tr:hover td {{ background: #f8f9fa; }}
-  td.good {{ color: #27ae60; font-weight: 700; }}
-  td.ok   {{ color: #d68910; font-weight: 700; }}
-  td.bad  {{ color: #e74c3c; font-weight: 700; }}
-
-  /* Doc issue expand inside table */
-  .doc-details summary {{ list-style: none; cursor: pointer; }}
-  .doc-details summary::-webkit-details-marker {{ display: none; }}
-  .doc-name {{ font-weight: 500; }}
-  .doc-issues {{ padding: 8px 0 4px 4px; }}
-  .issue-row {{ margin-bottom: 8px; font-size: 0.85em; padding: 6px 10px;
-                 background: #f8f9fa; border-radius: 4px; border-left: 3px solid #ddd; }}
-  .issue-row.sev-critical {{ border-left-color: #e74c3c; }}
-  .issue-row.sev-warning  {{ border-left-color: #f39c12; }}
-  .issue-row.sev-info     {{ border-left-color: #3498db; }}
-
-  /* Coverage grid */
-  .coverage-grid {{ display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }}
-  .cov-cell {{ flex: 1; min-width: 100px; text-align: center; padding: 12px 8px;
-                border-radius: 6px; font-size: 0.85rem; }}
-  .cov-cell strong {{ display: block; font-size: 1.5rem; }}
-  .cov-direct  {{ background: #eafaf1; color: #1e8449; }}
-  .cov-proxy   {{ background: #fef9e7; color: #9a7d0a; }}
-  .cov-risk    {{ background: #fdf2e9; color: #a04000; }}
-  .cov-runtime {{ background: #eaf2fb; color: #1a5276; }}
-  .cov-unsup   {{ background: #f2f3f4; color: #717d7e; }}
-
-  /* Cannot-determine box */
-  .cannot-box {{ background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px;
-                  padding: 16px 20px; font-size: 0.88em; }}
-  .cannot-box ul {{ margin: 8px 0; padding-left: 20px; }}
-  .cannot-box li {{ margin-bottom: 6px; }}
-
-  footer {{ margin-top: 48px; padding-top: 16px; border-top: 1px solid #ecf0f1;
-             color: #aaa; font-size: 0.8em; }}
-</style>
+<title>{e(title)}</title>
+{_HTML_CSS}
 </head>
 <body>
 {body}
-<footer>
-  Generated by <a href="https://github.com/anusky95/ragpreflight">ragpreflight</a>
-  &nbsp;·&nbsp;
-  Taxonomy: <a href="https://doi.org/10.18653/v1/2026.trustnlp-main.27">Garani 2026, TrustNLP</a>
-</footer>
+<div class="rp-footer">
+  <span>Generated by <a href="https://github.com/anusky95/ragpreflight">ragpreflight</a></span>
+  <span>Taxonomy: <a href="https://doi.org/10.18653/v1/2026.trustnlp-main.27">Garani 2026, TrustNLP</a></span>
+</div>
 </body>
 </html>"""
 
 
+# ---------------------------------------------------------------------------
+# HTML body generators
+# ---------------------------------------------------------------------------
+
+
 def _html_document_body(report: DocumentReport) -> str:
-    score_cls = "good" if report.score >= 70 else ("ok" if report.score >= 40 else "bad")
-    bar_colour = (
-        "#27ae60" if report.score >= 70 else ("#f39c12" if report.score >= 40 else "#e74c3c")
+    e = html_mod.escape
+    score = report.score
+    colour_var = _score_colour_var(score)
+
+    verdict_cls, verdict_label = _verdict_pill(score, len(report.critical_issues))
+
+    n_crit = len(report.critical_issues)
+    n_warn = len(report.warnings)
+    n_info = len(report.issues) - n_crit - n_warn
+
+    # Issue cards
+    issue_cards = []
+    for idx, issue in enumerate(report.issues):
+        issue_cards.append(
+            _issue_card_html(issue, page_count=report.page_count, open_first=(idx == 0))
+        )
+    issues_section = (
+        "\n".join(issue_cards)
+        if issue_cards
+        else (
+            '<div style="color:var(--green);font-weight:600;padding:16px 0;">'
+            "No issues found &mdash; document looks great!</div>"
+        )
     )
 
-    if report.score >= 70 and not report.critical_issues:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-ready",
-            "INGEST-READY",
-            "Document meets quality thresholds for RAG ingestion.",
-        )
-    elif report.score >= 40 or not report.critical_issues:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-review",
-            "NEEDS REVIEW",
-            f"{len(report.critical_issues)} critical issue(s) should be resolved before ingestion.",
-        )
-    else:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-fail",
-            "DO NOT INGEST",
-            f"Score {report.score}/100 with {len(report.critical_issues)} critical issue(s). Remediate before use.",
-        )
-
-    issues_html = ""
+    # Collect unique tool categories for summary
+    seen_cats: set[str] = set()
+    all_install_html_parts: list[str] = []
     for issue in report.issues:
-        badge_cls = f"badge-{issue.severity.value}"
-        sev_cls = f"sev-{issue.severity.value}"
-        loc = f" <em>({issue.location})</em>" if issue.location else ""
-        ctx_html = f"<div class='ctx'>↳ {issue.context}</div>" if issue.context else ""
-        fix_html = f"<p class='fix'>→ {issue.suggestion}</p>" if issue.suggestion else ""
-        tax_html = ""
-        if issue.taxonomy_refs:
-            ref_items: list[str] = []
-            for r in issue.taxonomy_refs:
-                rel_label = {
-                    "direct": "directly detected",
-                    "proxy": "proxy signal",
-                    "risk_signal": "risk signal",
-                }.get(r.relationship, r.relationship)
-                name_part = f" · {r.mode_name}" if r.mode_name else ""
-                defn_part = f"<br><em class='tax-def'>{r.definition}</em>" if r.definition else ""
-                expl_part = (
-                    f"<br><small class='tax-expl'>{r.explanation}</small>" if r.explanation else ""
-                )
-                ref_items.append(
-                    f"<span class='tax-item'>"
-                    f"<a href='https://doi.org/10.18653/v1/2026.trustnlp-main.27' "
-                    f"target='_blank' title='Garani 2026 taxonomy'>"
-                    f"<strong>{r.mode_id}</strong>{name_part}</a> "
-                    f"<span class='tax-rel'>({rel_label})</span>"
-                    f"{defn_part}{expl_part}"
-                    f"</span>"
-                )
-            tax_html = (
-                "<div class='tax-ref'>"
-                "<strong>Garani 2026 failure mode:</strong> " + " ".join(ref_items) + "</div>"
-            )
+        cat = issue.category.value
+        if cat not in seen_cats:
+            seen_cats.add(cat)
+            block = _install_html(cat, issue.message)
+            if block:
+                all_install_html_parts.append(block)
 
-        issues_html += f"""
-        <details class='issue-item {sev_cls}'>
-          <summary class='issue-summary'>
-            <span class='badge {badge_cls}'>{issue.severity.value.upper()}</span>
-            <span>[{issue.category.value}] {issue.message}{loc}</span>
-          </summary>
-          <div class='issue-body'>{ctx_html}{fix_html}{tax_html}</div>
-        </details>"""
+    install_summary = ""
+    if all_install_html_parts:
+        install_summary = (
+            '<div class="section-header" style="margin-top:36px;">Recommended Tools</div>'
+            + "\n".join(all_install_html_parts)
+        )
 
     return f"""
-<h1>ragpreflight — Document Readiness Report</h1>
-<div class='verdict {verdict_cls}'>
-  <span class='verdict-label'>{verdict_label}</span>
-  <span>{verdict_desc}</span>
+<div class="rp-header">
+  <div class="rp-logo">rp</div>
+  <div>
+    <h1>ragpreflight Document Audit</h1>
+    <div class="subtitle">Pre-ingestion quality analysis</div>
+  </div>
 </div>
-<div class='score-row'>
-  <span class='score-num {score_cls}'>{report.score}/100</span>
-  <span class='bar'><span class='bar-fill' style='width:{report.score}%;background:{bar_colour}'></span></span>
+
+<div class="score-card">
+  {_svg_gauge(score, colour_var)}
+  <div class="score-details">
+    <span class="verdict-pill {verdict_cls}">{verdict_label}</span>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">File</span>
+        <span class="meta-value">{e(Path(report.filepath).name)}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Format</span>
+        <span class="meta-value">{e(report.file_format.upper())} &middot; {report.page_count} page(s)</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Size</span>
+        <span class="meta-value">{_human_size(report.file_size_bytes)}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Extractable</span>
+        <span class="meta-value" style="color:var({_score_colour_var(int(report.text_extractable_ratio * 100))})">{report.text_extractable_ratio:.0%}</span>
+      </div>
+    </div>
+  </div>
 </div>
-<div class='meta'>
-  <span class='pill'>📄 {report.file_format.upper()}</span>
-  <span class='pill'>💾 {_human_size(report.file_size_bytes)}</span>
-  <span class='pill'>📑 {report.page_count} page(s)</span>
-  <span class='pill'>🔍 {report.text_extractable_ratio:.0%} extractable</span>
+
+<div class="counts-strip">
+  <div class="count-chip {"chip-ok" if n_crit == 0 else "chip-critical"}"><span class="dot"></span> {n_crit} Critical</div>
+  <div class="count-chip chip-warning"><span class="dot"></span> {n_warn} Warning{"s" if n_warn != 1 else ""}</div>
+  <div class="count-chip chip-info"><span class="dot"></span> {n_info} Info</div>
 </div>
-<p style='color:#555;font-size:0.9em'><strong>File:</strong> {report.filepath}</p>
-<h2>Issues ({len(report.issues)})</h2>
-{issues_html or "<p>✓ No issues found.</p>"}
+
+<div class="section-header">Issues Found</div>
+{issues_section}
+
+{install_summary}
+
+{_taxonomy_coverage_html()}
 """
 
 
 def _html_corpus_body(report: CorpusReport) -> str:
+    e = html_mod.escape
     avg = report.average_score
+    score = int(round(avg))
+    colour_var = _score_colour_var(score)
     critical_count = sum(len(d.critical_issues) for d in report.documents)
-    bar_colour = "#27ae60" if avg >= 70 else ("#f39c12" if avg >= 40 else "#e74c3c")
-    score_cls = "good" if avg >= 70 else ("ok" if avg >= 40 else "bad")
+    total_issues = sum(len(d.issues) for d in report.documents)
 
-    if avg >= 70 and critical_count == 0:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-ready",
-            "INGEST-READY",
-            f"Corpus average {avg:.0f}/100 with no critical issues. Safe to ingest.",
-        )
-    elif avg >= 50 or critical_count <= 2:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-review",
-            "NEEDS REVIEW",
-            f"Average {avg:.0f}/100 · {critical_count} critical issue(s) require attention before ingestion.",
-        )
-    else:
-        verdict_cls, verdict_label, verdict_desc = (
-            "verdict-fail",
-            "DO NOT INGEST",
-            f"Average {avg:.0f}/100 · {critical_count} critical issue(s). Remediate before ingestion.",
-        )
+    verdict_cls, verdict_label = _verdict_pill(score, critical_count)
 
-    # Corpus-level issue summary
-    corpus_issues_html = ""
-    for issue in report.corpus_issues:
-        badge_cls = f"badge-{issue.severity.value}"
-        corpus_issues_html += (
-            f"<li><span class='badge {badge_cls}'>{issue.severity.value.upper()}</span> "
-            f"{issue.message}"
-            + (
-                f"<br><span class='action-fix'>→ {issue.suggestion}</span>"
-                if issue.suggestion
-                else ""
-            )
-            + "</li>"
-        )
+    # Corpus-level issue cards
+    corpus_cards = "\n".join(
+        _issue_card_html(issue, page_count=0, open_first=False) for issue in report.corpus_issues
+    )
+    corpus_section = corpus_cards or (
+        '<div style="color:var(--fg-muted);padding:8px 0;">No corpus-level issues.</div>'
+    )
 
-    # Top 5 actions across corpus
+    # Top 5 actions
     all_issues: list[tuple[Issue, str]] = []
     for doc in report.documents:
         for issue in doc.issues:
@@ -495,175 +666,410 @@ def _html_corpus_body(report: CorpusReport) -> str:
             x[0].severity != Severity.WARNING,
         )
     )
-    top_actions_html = ""
+    top_actions = ""
     for issue, fname in all_issues[:5]:
-        badge_cls = f"badge-{issue.severity.value}"
-        tax_note = ""
-        if issue.taxonomy_refs:
-            refs = ", ".join(
-                f"{r.mode_id} {r.mode_name or ''} ({r.relationship})".strip()
-                for r in issue.taxonomy_refs
-            )
-            tax_note = f" <span style='color:#888;font-size:0.82em'>[{refs}]</span>"
-        top_actions_html += (
-            f"<li><span class='badge {badge_cls}'>{issue.severity.value.upper()}</span>"
-            f"<div class='action-body'>"
-            f"<span class='action-file'>{fname}:</span> {issue.message}{tax_note}"
-            + (f"<div class='action-fix'>→ {issue.suggestion}</div>" if issue.suggestion else "")
-            + "</div></li>"
+        sev = issue.severity.value
+        top_actions += (
+            f'<div class="issue-card" style="cursor:default;">'
+            f'<div style="padding:14px 20px;display:flex;align-items:flex-start;gap:12px;">'
+            f'<span class="sev-dot {sev}"></span>'
+            f'<div style="min-width:0;">'
+            f'<div class="issue-title"><span class="category-tag">{issue.category.value}</span> '
+            f"{e(_summary_line(issue.message))}</div>"
+            f'<div style="font-size:0.8rem;color:var(--fg-muted);margin-top:2px;">'
+            f"{e(fname)}"
+            + (f" &middot; {e(issue.suggestion)}" if issue.suggestion else "")
+            + "</div></div></div></div>"
         )
 
-    # Per-document rows with expandable issues
+    # Per-document table
     rows = ""
     for doc in sorted(report.documents, key=lambda d: d.score):
-        sc = "good" if doc.score >= 70 else ("ok" if doc.score >= 40 else "bad")
+        sc_var = _score_colour_var(doc.score)
         crit_badge = (
-            " <span style='color:#e74c3c;font-size:0.75em;font-weight:700'> ● CRITICAL</span>"
+            ' <span style="color:var(--red);font-size:0.72rem;font-weight:700;"> CRITICAL</span>'
             if doc.critical_issues
             else ""
         )
-        issues_detail = ""
+        # Inline issue cards for each document
+        doc_issues_html = ""
         for issue in doc.issues:
-            badge_cls = f"badge-{issue.severity.value}"
-            sev_cls = f"sev-{issue.severity.value}"
-            loc = f" <em>({issue.location})</em>" if issue.location else ""
-            ctx_html = f"<div class='ctx'>↳ {issue.context}</div>" if issue.context else ""
-            fix_html = f"<div class='fix'>→ {issue.suggestion}</div>" if issue.suggestion else ""
-            tax_html = ""
-            if issue.taxonomy_refs:
-                ref_parts: list[str] = []
-                for r in issue.taxonomy_refs:
-                    rel_label = {
-                        "direct": "directly detected",
-                        "proxy": "proxy signal",
-                        "risk_signal": "risk signal",
-                    }.get(r.relationship, r.relationship)
-                    name_part = f" · {r.mode_name}" if r.mode_name else ""
-                    defn_part = f" — <em>{r.definition}</em>" if r.definition else ""
-                    ref_parts.append(
-                        f"<a href='https://doi.org/10.18653/v1/2026.trustnlp-main.27' "
-                        f"target='_blank'><strong>{r.mode_id}</strong>{name_part}</a>"
-                        f" ({rel_label}){defn_part}"
-                    )
-                tax_html = (
-                    "<div class='tax-ref'><strong>Garani 2026:</strong> "
-                    + " · ".join(ref_parts)
-                    + "</div>"
+            sev = issue.severity.value
+            ctx_snip = ""
+            if issue.context:
+                short_ctx = textwrap.shorten(issue.context, width=120, placeholder="...")
+                ctx_snip = (
+                    f'<div class="snippet-block" style="margin-top:6px;padding:8px 12px;">'
+                    f'<div class="snippet-text" style="font-size:0.76rem;">{e(short_ctx)}</div>'
+                    f"</div>"
                 )
-            issues_detail += (
-                f"<div class='issue-row {sev_cls}'>"
-                f"<span class='badge {badge_cls}'>{issue.severity.value.upper()}</span> "
-                f"<strong>[{issue.category.value}]</strong> {issue.message}{loc}"
-                f"{ctx_html}{fix_html}{tax_html}"
-                f"</div>"
+            fix_note = ""
+            if issue.suggestion:
+                fix_note = (
+                    f'<div style="color:var(--green);font-size:0.8rem;margin-top:4px;">'
+                    f"&rarr; {e(issue.suggestion)}</div>"
+                )
+            tax_pills = ""
+            if issue.taxonomy_refs:
+                pills = " ".join(
+                    f'<a class="tax-link" style="font-size:0.7rem;padding:2px 8px;" '
+                    f'href="https://doi.org/10.18653/v1/2026.trustnlp-main.27" target="_blank">'
+                    f"{e(r.mode_id)}</a>"
+                    for r in issue.taxonomy_refs
+                )
+                tax_pills = f'<div style="margin-top:4px;">{pills}</div>'
+            doc_issues_html += (
+                f'<div style="margin-bottom:10px;padding:8px 12px;background:var(--surface-raised);'
+                f'border-radius:6px;border-left:3px solid var({"--red" if sev == "critical" else ("--amber" if sev == "warning" else "--blue")});">'
+                f'<div style="display:flex;align-items:flex-start;gap:8px;">'
+                f'<span class="sev-dot {sev}" style="margin-top:3px;"></span>'
+                f'<div style="min-width:0;">'
+                f'<span class="category-tag">{issue.category.value}</span> '
+                f'<span style="font-size:0.85rem;">{e(_summary_line(issue.message))}</span>'
+                f"{ctx_snip}{fix_note}{tax_pills}"
+                f"</div></div></div>"
             )
 
-        no_issues_placeholder = "<em style='color:#888'>No issues.</em>"
-        issues_cell = issues_detail or no_issues_placeholder
-        crit_cell = (
-            "<td><span style='color:#e74c3c;font-weight:700'>"
-            + str(len(doc.critical_issues))
-            + "</span></td>"
-            if doc.critical_issues
-            else "<td>0</td>"
-        )
+        no_issues = '<em style="color:var(--fg-muted);">No issues.</em>'
         rows += (
             f"<tr>"
-            f"<td class='{sc}'>{doc.score}</td>"
+            f'<td style="font-weight:700;color:var({sc_var});font-variant-numeric:tabular-nums;">{doc.score}</td>'
             f"<td><details class='doc-details'>"
-            f"<summary class='doc-name'>{Path(doc.filepath).name}{crit_badge}</summary>"
-            f"<div class='doc-issues'>{issues_cell}</div>"
+            f'<summary class="doc-name">{e(Path(doc.filepath).name)}{crit_badge}</summary>'
+            f'<div class="doc-issues">{doc_issues_html or no_issues}</div>'
             f"</details></td>"
-            f"<td>{doc.file_format.upper()}</td>"
-            f"<td>{len(doc.issues)}</td>" + crit_cell + "</tr>"
+            f"<td>{e(doc.file_format.upper())}</td>"
+            f"<td>{len(doc.issues)}</td>"
+            f'<td style="{"color:var(--red);font-weight:700;" if doc.critical_issues else ""}">'
+            f"{len(doc.critical_issues)}</td>"
+            f"</tr>"
         )
 
-    # Taxonomy coverage panel
-    tax_html = ""
-    try:
-        from ragpreflight.taxonomy import detector_coverage
+    # Collect all tool categories across corpus
+    seen_cats: set[str] = set()
+    all_install_parts: list[str] = []
+    for doc in report.documents:
+        for issue in doc.issues:
+            cat = issue.category.value
+            if cat not in seen_cats:
+                seen_cats.add(cat)
+                block = _install_html(cat, issue.message)
+                if block:
+                    all_install_parts.append(block)
 
-        cov = detector_coverage()
-        direct_ids = ", ".join(m.id for m in cov.direct)
-        proxy_ids = ", ".join(m.id for m in cov.proxy)
-        risk_ids = ", ".join(m.id for m in cov.risk_signal)
-        tax_html = f"""
-<h2>Taxonomy Coverage — Garani 2026</h2>
-<p style='color:#555;font-size:0.88em'>
-  Source: Garani, A. (2026). <em>A Systematic Taxonomy of Failure Modes in Retrieval-Augmented Generation Systems.</em>
-  TrustNLP 2026.
-  <a href='https://doi.org/10.18653/v1/2026.trustnlp-main.27'>doi:10.18653/v1/2026.trustnlp-main.27</a>
-</p>
-<div class='coverage-grid'>
-  <div class='cov-cell cov-direct'><strong>{len(cov.direct)}</strong>direct<br><small>{direct_ids}</small></div>
-  <div class='cov-cell cov-proxy'><strong>{len(cov.proxy)}</strong>proxy<br><small>{proxy_ids}</small></div>
-  <div class='cov-cell cov-risk'><strong>{len(cov.risk_signal)}</strong>risk signal<br><small>{risk_ids}</small></div>
-  <div class='cov-cell cov-runtime'><strong>{len(cov.runtime_required)}</strong>runtime required</div>
-  <div class='cov-cell cov-unsup'><strong>{len(cov.unsupported)}</strong>unsupported</div>
-</div>
-<p style='color:#666;font-size:0.85em'>
-  {len(cov.direct)} direct + {len(cov.proxy) + len(cov.risk_signal)} proxy/risk = {len(cov.direct) + len(cov.proxy) + len(cov.risk_signal)} of 33 modes assessed statically.
-  A tool claiming 33/33 detection is lying.
-</p>"""
-    except Exception:
-        pass
-
-    cannot_html = """
-<h2>What this audit cannot determine</h2>
-<div class='cannot-box'>
-<p>Static pre-ingestion scanning cannot assess the following failure modes
-(Garani 2026 taxonomy) — they require live system traces, LLM outputs, or agent logs:</p>
-<ul>
-  <li><strong>F6</strong> Embedding Drift / Model Mismatch — requires embedding config + version metadata at runtime</li>
-  <li><strong>F12</strong> Position-of-Gold Bias — requires live LLM context window</li>
-  <li><strong>F13–F17</strong> Generation failures (hallucination, conflicting info, partial answers, wrong format) — require generated outputs + faithfulness eval</li>
-  <li><strong>F19–F22, F24–F25</strong> Deployment failures (monitoring, latency, portability, prompt sensitivity, authorization) — require runtime metrics and config</li>
-  <li><strong>F26–F33</strong> Agentic orchestration failures — require agent traces (all Limited evidence in paper; no peer-reviewed benchmarks yet)</li>
-</ul>
-<p>For runtime coverage:
-  <a href='https://deepeval.com'>DeepEval</a> ·
-  <a href='https://docs.ragas.io'>Ragas</a> ·
-  <a href='https://pypi.org/project/ragchecker/'>RAGChecker</a> ·
-  <a href='https://github.com/Arize-ai/openinference'>Phoenix / OpenInference</a>
-</p>
-</div>"""
+    install_summary = ""
+    if all_install_parts:
+        install_summary = (
+            '<div class="section-header" style="margin-top:36px;">Recommended Tools</div>'
+            + "\n".join(all_install_parts)
+        )
 
     return f"""
-<h1>ragpreflight — Corpus Readiness Report</h1>
-<div class='verdict {verdict_cls}'>
-  <span class='verdict-label'>{verdict_label}</span>
-  <span>{verdict_desc}</span>
-</div>
-<div class='score-row'>
-  <span class='score-num {score_cls}'>{avg:.1f}/100</span>
-  <span class='bar'><span class='bar-fill' style='width:{min(avg, 100):.0f}%;background:{bar_colour}'></span></span>
-  <span style='color:#888;font-size:0.9em'>{report.total_documents} documents · {len(report.duplicate_groups)} duplicate group(s)</span>
-</div>
-<div class='meta'>
-  <span class='pill'>📁 {report.directory}</span>
-  <span class='pill'>📄 {report.total_documents} docs</span>
-  <span class='pill'>⚠ {critical_count} critical</span>
-  <span class='pill'>📋 {sum(len(d.issues) for d in report.documents)} total issues</span>
+<div class="rp-header">
+  <div class="rp-logo">rp</div>
+  <div>
+    <h1>ragpreflight Corpus Audit</h1>
+    <div class="subtitle">Pre-ingestion quality analysis &middot; {report.total_documents} documents</div>
+  </div>
 </div>
 
-<h2>Corpus-level Issues</h2>
-<ul class='issue-list'>{corpus_issues_html or '<li style="color:#888">None</li>'}</ul>
+<div class="score-card">
+  {_svg_gauge(score, colour_var)}
+  <div class="score-details">
+    <span class="verdict-pill {verdict_cls}">{verdict_label}</span>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Directory</span>
+        <span class="meta-value">{e(report.directory)}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Documents</span>
+        <span class="meta-value">{report.total_documents}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Duplicates</span>
+        <span class="meta-value">{len(report.duplicate_groups)} group(s)</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Total Issues</span>
+        <span class="meta-value">{total_issues}</span>
+      </div>
+    </div>
+  </div>
+</div>
 
-<h2>Top Actions Required</h2>
-<ul class='actions'>{top_actions_html or '<li style="color:#888">No issues found.</li>'}</ul>
+<div class="counts-strip">
+  <div class="count-chip {"chip-ok" if critical_count == 0 else "chip-critical"}"><span class="dot"></span> {critical_count} Critical</div>
+  <div class="count-chip chip-warning"><span class="dot"></span> {sum(len(d.warnings) for d in report.documents)} Warnings</div>
+  <div class="count-chip chip-info"><span class="dot"></span> {total_issues - critical_count - sum(len(d.warnings) for d in report.documents)} Info</div>
+</div>
 
-<h2>Document Scores <span style='font-size:0.8rem;font-weight:400;color:#888'>(click a filename to expand issues)</span></h2>
-<table>
+<div class="section-header">Corpus-level Issues</div>
+{corpus_section}
+
+<div class="section-header" style="margin-top:28px;">Top Actions Required</div>
+{top_actions or '<div style="color:var(--fg-muted);padding:8px 0;">No issues found.</div>'}
+
+<div class="section-header" style="margin-top:28px;">
+  Document Scores
+  <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--fg-muted);font-size:0.75rem;">
+    &mdash; click a filename to expand issues
+  </span>
+</div>
+<table class="corpus-table">
   <thead><tr><th>Score</th><th>File</th><th>Format</th><th>Issues</th><th>Critical</th></tr></thead>
   <tbody>{rows}</tbody>
 </table>
-{tax_html}
-{cannot_html}
+
+{install_summary}
+{_taxonomy_coverage_html()}
+{_cannot_determine_html()}
 """
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# HTML helper functions
+# ---------------------------------------------------------------------------
+
+
+def _svg_gauge(score: int, colour_var: str) -> str:
+    r = 52
+    circumference = 2 * math.pi * r
+    offset = circumference * (1 - score / 100)
+    return f"""<div class="gauge">
+  <svg viewBox="0 0 120 120">
+    <circle cx="60" cy="60" r="{r}" fill="none" stroke="var(--border)" stroke-width="8"/>
+    <circle cx="60" cy="60" r="{r}" fill="none" stroke="var({colour_var})" stroke-width="8"
+            stroke-dasharray="{circumference:.2f}" stroke-dashoffset="{offset:.2f}"
+            stroke-linecap="round" transform="rotate(-90 60 60)"/>
+  </svg>
+  <div class="gauge-text">
+    <span class="gauge-num" style="color:var({colour_var})">{score}</span>
+    <span class="gauge-label">of 100</span>
+  </div>
+</div>"""
+
+
+def _score_colour_var(score: int) -> str:
+    if score >= 70:
+        return "--green"
+    if score >= 40:
+        return "--amber"
+    return "--red"
+
+
+def _verdict_pill(score: int, critical_count: int) -> tuple[str, str]:
+    if score >= 70 and critical_count == 0:
+        return "verdict-ready", "Ingest Ready"
+    if score >= 40 or critical_count == 0:
+        return "verdict-review", "Needs Review"
+    return "verdict-reject", "Do Not Ingest"
+
+
+def _extract_pages(location: str | None) -> list[int]:
+    if not location:
+        return []
+    pages: set[int] = set()
+    for m in re.finditer(r"(\d+)\s*[-–]\s*(\d+)", location):
+        start, end = int(m.group(1)), int(m.group(2))
+        if 0 < start <= end <= 5000:
+            pages.update(range(start, end + 1))
+    for m in re.finditer(r"\bpage\s+(\d+)", location, re.IGNORECASE):
+        pages.add(int(m.group(1)))
+    return sorted(pages)
+
+
+def _page_map_html(page_count: int, affected_pages: list[int], severity: str) -> str:
+    if page_count <= 0 or page_count > 200:
+        return ""
+    hit_cls = (
+        "hit-critical" if severity == "critical" else ("hit-info" if severity == "info" else "hit")
+    )
+    affected_set = set(affected_pages)
+    cells = []
+    for p in range(1, page_count + 1):
+        cls = hit_cls if p in affected_set else ""
+        cells.append(f'<div class="page-cell {cls}">{p}</div>')
+    return (
+        '<div style="font-size:0.78rem;color:var(--fg-muted);margin-bottom:4px;">Pages affected:</div>'
+        f'<div class="page-map">{"".join(cells)}</div>'
+    )
+
+
+def _install_html(category: str, message: str) -> str:
+    tools = TOOL_SUGGESTIONS.get(category, [])
+    if not tools:
+        return ""
+    if category == "content":
+        msg = message.lower()
+        if "pii" in msg or "email" in msg or "personal" in msg:
+            filtered = [t for t in tools if "pii" in t[1].lower()]
+            if filtered:
+                tools = filtered
+        elif "math" in msg or "formula" in msg or "equation" in msg:
+            filtered = [t for t in tools if "math" in t[1].lower()]
+            if filtered:
+                tools = filtered
+    items = "".join(
+        f'<div class="install-item">'
+        f"<code>{html_mod.escape(t[2])}</code>"
+        f"<span>{html_mod.escape(t[1])}</span>"
+        f"</div>"
+        for t in tools
+    )
+    return f'<div class="install-block"><h4>Recommended tools</h4>{items}</div>'
+
+
+def _summary_line(message: str) -> str:
+    first = message.split("\n")[0].strip()
+    if first.endswith(":"):
+        first = first[:-1]
+    if len(first) > 120:
+        first = first[:117] + "..."
+    return first
+
+
+def _issue_card_html(issue: Issue, page_count: int = 0, open_first: bool = False) -> str:
+    e = html_mod.escape
+    sev = issue.severity.value
+    cat = issue.category.value
+    open_attr = " open" if open_first else ""
+
+    summary_text = _summary_line(issue.message)
+    full_message = issue.message.strip()
+
+    # Show full message details inside body if truncated
+    detail_html = ""
+    if full_message != summary_text and full_message != summary_text + ":":
+        detail_html = f'<div class="issue-detail">{e(full_message)}</div>'
+
+    # Context snippet
+    ctx_html = ""
+    if issue.context:
+        ctx_html = (
+            '<div class="snippet-block">'
+            '<span class="snippet-label">Extracted text</span>'
+            f'<div class="snippet-text">{e(issue.context)}</div>'
+            "</div>"
+        )
+
+    # Page map
+    page_html = ""
+    affected = _extract_pages(issue.location)
+    if affected and page_count > 0:
+        page_html = _page_map_html(page_count, affected, sev)
+
+    # Impact (from taxonomy explanation)
+    impact_html = ""
+    if issue.taxonomy_refs:
+        for ref in issue.taxonomy_refs:
+            if ref.explanation:
+                border_cls = " info-impact" if sev == "info" else ""
+                impact_html = (
+                    f'<div class="impact-block{border_cls}">'
+                    f"<h4>RAG Impact</h4>"
+                    f"<p>{e(ref.explanation)}</p>"
+                    f"</div>"
+                )
+                break
+
+    # Fix suggestion
+    fix_html = ""
+    if issue.suggestion:
+        fix_html = (
+            '<div class="fix-block">'
+            '<span class="fix-icon">&rarr;</span>'
+            f"<p>{e(issue.suggestion)}</p>"
+            "</div>"
+        )
+
+    # Install suggestions
+    install = _install_html(cat, issue.message)
+
+    # Taxonomy links
+    tax_html = ""
+    if issue.taxonomy_refs:
+        links = []
+        for ref in issue.taxonomy_refs:
+            name = f" &middot; {e(ref.mode_name)}" if ref.mode_name else ""
+            links.append(
+                f'<a class="tax-link" href="https://doi.org/10.18653/v1/2026.trustnlp-main.27" '
+                f'target="_blank">{e(ref.mode_id)}{name}</a>'
+            )
+        tax_html = f'<div class="tax-links">{"".join(links)}</div>'
+
+    loc_note = ""
+    if issue.location:
+        loc_note = f' <span style="font-weight:400;font-size:0.8rem;color:var(--fg-muted);">&middot; {e(issue.location)}</span>'
+
+    return f"""<details class="issue-card"{open_attr}>
+  <summary>
+    <span class="sev-dot {sev}"></span>
+    <span class="issue-title">
+      <span class="category-tag">{cat}</span>
+      {e(summary_text)}{loc_note}
+    </span>
+  </summary>
+  <div class="issue-body">
+    {detail_html}
+    {ctx_html}
+    {page_html}
+    {impact_html}
+    {fix_html}
+    {install}
+    {tax_html}
+  </div>
+</details>"""
+
+
+def _taxonomy_coverage_html() -> str:
+    try:
+        from ragpreflight.taxonomy import detector_coverage
+
+        cov = detector_coverage()
+        return f"""
+<div class="section-header" style="margin-top:36px;">Garani 2026 Failure Taxonomy Coverage</div>
+<p style="font-size:0.84rem;color:var(--fg-secondary);margin:0 0 12px;">
+  Each issue is linked to a failure mode from the
+  <a href="https://doi.org/10.18653/v1/2026.trustnlp-main.27" target="_blank" style="color:var(--accent);">
+  peer-reviewed taxonomy of 33 RAG failure modes</a> (Garani 2026, TrustNLP @ ACL).
+</p>
+<div class="coverage-grid">
+  <div class="cov-cell cov-direct"><strong>{len(cov.direct)}</strong>direct</div>
+  <div class="cov-cell cov-proxy"><strong>{len(cov.proxy)}</strong>proxy</div>
+  <div class="cov-cell cov-risk"><strong>{len(cov.risk_signal)}</strong>risk signal</div>
+  <div class="cov-cell cov-runtime"><strong>{len(cov.runtime_required)}</strong>runtime req.</div>
+</div>
+<p style="font-size:0.78rem;color:var(--fg-muted);margin:0;">
+  Static pre-ingestion analysis covers {len(cov.direct) + len(cov.proxy) + len(cov.risk_signal)} of 33 modes.
+  The remaining {len(cov.runtime_required) + len(cov.unsupported)} require live system traces, LLM outputs, or agent logs.
+  For runtime coverage:
+  <a href="https://deepeval.com" target="_blank" style="color:var(--accent);">DeepEval</a> &middot;
+  <a href="https://docs.ragas.io" target="_blank" style="color:var(--accent);">Ragas</a> &middot;
+  <a href="https://pypi.org/project/ragchecker/" target="_blank" style="color:var(--accent);">RAGChecker</a>
+</p>"""
+    except Exception:
+        return ""
+
+
+def _cannot_determine_html() -> str:
+    return """
+<div class="section-header" style="margin-top:36px;">What This Audit Cannot Determine</div>
+<div class="cannot-box">
+<p>Static pre-ingestion scanning cannot assess these failure modes
+(Garani 2026 taxonomy) &mdash; they require live system traces, LLM outputs, or agent logs:</p>
+<ul>
+  <li><strong>F6</strong> Embedding Drift / Model Mismatch &mdash; requires embedding config + version metadata at runtime</li>
+  <li><strong>F12</strong> Position-of-Gold Bias &mdash; requires live LLM context window</li>
+  <li><strong>F13&ndash;F17</strong> Generation failures (hallucination, conflicting info, partial answers) &mdash; require generated outputs + faithfulness eval</li>
+  <li><strong>F19&ndash;F25</strong> Deployment failures (monitoring, latency, authorization, PII leaks) &mdash; require runtime metrics and config</li>
+  <li><strong>F26&ndash;F33</strong> Agentic orchestration failures &mdash; require agent traces</li>
+</ul>
+</div>"""
+
+
+# ---------------------------------------------------------------------------
+# Existing helpers (terminal + shared)
 # ---------------------------------------------------------------------------
 
 
