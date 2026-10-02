@@ -81,26 +81,24 @@ It is grounded in peer-reviewed research: 33 failure modes across 7 pipeline sta
 
 ## How it compares
 
-| | **ragpreflight** | RAGAS | DeepEval | TruLens | RAGChecker | Unstructured |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **When it runs** | **pre-ingestion** | post-gen | post-gen | post-gen | post-gen | ingestion |
-| Needs a live RAG system | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Needs an LLM to run | ❌ | ✅ | ✅ | ✅ | ✅ | ⚠️ optional |
-| Needs labeled queries / golden sets | ❌ | ⚠️ some metrics | ⚠️ some metrics | ⚠️ some metrics | ✅ | ❌ |
-| Fully offline | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ OSS only |
-| OCR artifact detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Chunking boundary quality | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Near-duplicate detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| PII in source documents | ✅ | ❌ | ⚠️ | ❌ | ❌ | ❌ |
-| Staleness detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Taxonomy-grounded (peer-reviewed) | ✅ 33 modes | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Multi-format (PDF/DOCX/CSV/HTML/MD…) | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Readiness score 0–100 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| HTML audit report | ✅ | ❌ | ⚠️ cloud dashboard | ✅ | ❌ | ❌ |
-| CI/CD exit code gating | ✅ | ⚠️ | ✅ | ❌ | ❌ | ❌ |
-| SARIF output (GitHub Code Scanning) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+ragpreflight **audits** documents; the tools below **process** them. Use ragpreflight to find quality issues before ingestion, then use a parser/converter to extract and chunk.
 
-> **These tools are complementary, not competing.** This table compares pre-ingestion capabilities only — RAGAS, DeepEval, TruLens and RAGChecker offer runtime evaluation features (faithfulness, answer relevance, hallucination detection) that ragpreflight does not attempt. ragpreflight cleans and validates your corpus before ingestion; those tools evaluate your live RAG system after deployment. Use both.
+| | **ragpreflight** | Unstructured | Docling | LlamaParse | Marker |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Purpose** | **quality audit** | parsing + extraction | conversion | cloud parsing | PDF → markdown |
+| Readiness score (0–100) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Issue diagnostics with fixes | ✅ | ❌ | ❌ | ❌ | ❌ |
+| OCR error detection | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Near-duplicate detection | ✅ | ❌ | ❌ | ❌ | ❌ |
+| CI/CD quality gate + SARIF | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Taxonomy-grounded (peer-reviewed) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Document extraction + conversion | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Table extraction | ⚠️ detects | ✅ | ✅ | ✅ | ⚠️ |
+| OCR processing | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Multi-format | ✅ 10 formats | ✅ | ✅ | ✅ | PDF |
+| Fully offline, no API keys | ✅ | ⚠️ OSS only | ✅ | ❌ | ✅ |
+
+> **For runtime RAG evaluation** (faithfulness, answer relevance, hallucination detection) — see [RAGAS](https://docs.ragas.io), [DeepEval](https://deepeval.com), [TruLens](https://www.trulens.org), [RAGChecker](https://pypi.org/project/ragchecker/). These tools evaluate your live RAG system after deployment; ragpreflight runs before ingestion. Use both.
 
 ---
 
