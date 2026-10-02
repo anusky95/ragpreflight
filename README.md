@@ -17,8 +17,8 @@ ragpreflight scan my_document.pdf
 ╭──────────────────────────────────────────────────────────────────────╮
 │ ragpreflight — Document Readiness Report                             │
 │ File: quarterly_report.pdf                                           │
-│ Score: 44/100  █████████░░░░░░░░░░░                                  │
-│ Format: PDF  ·  Size: 2.1 MB  ·  Pages: 34  ·  Extractable: 0%      │
+│ Score: 38/100  ████████░░░░░░░░░░░░                                  │
+│ Format: PDF  ·  Size: 2.1 MB  ·  Pages: 34  ·  Extractable: 34%     │
 ╰──────────────────────────────────────────────────────────────────────╯
 
   CRITICAL  ocr      [pages 3, 7, 11] l / I / 1 confusion — 23 matches
@@ -37,8 +37,9 @@ ragpreflight scan my_document.pdf
                      Common in low-DPI scans of serif fonts.
                      → Re-scan at 300 DPI minimum or run post-OCR cleanup.
 
-  CRITICAL  content  0% of pages have extractable text. This is a scanned PDF.
-                     → Apply OCR (Tesseract, AWS Textract, Google Document AI) before ingestion.
+  CRITICAL  content  66% of pages have no extractable text (scanned without OCR layer).
+                     The 34% with an OCR text layer contains the errors flagged above.
+                     → Apply OCR (Tesseract, AWS Textract, Google Document AI) to all pages.
 
   WARNING   structure 8 table(s) detected — will chunk as garbled text without special handling.
                      → Use a table-aware extractor (pdfplumber, Camelot, LlamaParse).
@@ -49,13 +50,13 @@ ragpreflight scan my_document.pdf
   INFO      metadata No title, author, or creation date in document metadata.
                      → Add metadata to improve retrieval ranking and attribution.
 
-7 issue(s) found  ·  Score: 44  ·  4 critical
+7 issue(s) found  ·  Score: 38  ·  4 critical
 
 RAG Failure Taxonomy  (doi:10.18653/v1/2026.trustnlp-main.27)
   OCR artifacts  → F3  Document Quality Failure       [direct]
-  Scanned PDF    → F3  Document Quality Failure       [direct]
-  Tables         → F7  Structure-Unaware Chunking     [risk signal]
-  PII            → F23 PII / Compliance Leak          [direct]
+  Low extraction → F3  Document Quality Failure       [direct]
+  Tables         → F7  Chunking Boundary Errors       [risk signal]
+  PII            → F23 PII / Compliance Leak          [risk signal]
   No metadata    → F11 Low Recall / Ranking Failure   [risk signal]
 ```
 
@@ -74,7 +75,7 @@ Your documents  →  [ragpreflight]  →  fix issues  →  embed  →  RAG syste
             Nothing else runs here.
 ```
 
-It is grounded in peer-reviewed research: 33 failure modes across 7 pipeline stages from [Garani 2026](https://doi.org/10.18653/v1/2026.trustnlp-main.27) — the first systematic taxonomy of RAG failure modes published at TrustNLP 2026 (ACL). ragpreflight is the first open-source tool that links every detected issue to a named failure mode from that published taxonomy.
+It is grounded in peer-reviewed research: 33 failure modes across 7 pipeline stages from [Garani 2026](https://doi.org/10.18653/v1/2026.trustnlp-main.27), published at TrustNLP 2026 (ACL). To our knowledge, ragpreflight is the first open-source tool that links every detected issue to a named failure mode from a peer-reviewed RAG failure taxonomy.
 
 ---
 
@@ -99,7 +100,7 @@ It is grounded in peer-reviewed research: 33 failure modes across 7 pipeline sta
 | CI/CD exit code gating | ✅ | ⚠️ | ✅ | ❌ | ❌ | ❌ |
 | SARIF output (GitHub Code Scanning) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-> **These tools are complementary, not competing.** ragpreflight cleans and validates your corpus before ingestion. RAGAS/DeepEval/TruLens evaluate your live RAG system after deployment. Use both.
+> **These tools are complementary, not competing.** This table compares pre-ingestion capabilities only — RAGAS, DeepEval, TruLens and RAGChecker offer runtime evaluation features (faithfulness, answer relevance, hallucination detection) that ragpreflight does not attempt. ragpreflight cleans and validates your corpus before ingestion; those tools evaluate your live RAG system after deployment. Use both.
 
 ---
 
@@ -274,6 +275,29 @@ ragpreflight scan doc.pdf --profile strict      # medical, legal, financial
 | `standard` | 60 | < 5% | 0.90 |
 | `strict` | 80 | < 2% | 0.85 |
 
+Profile thresholds were chosen to match common risk tolerance levels: `permissive` accepts documents that are usable despite quality issues (internal tools, FAQ chatbots); `standard` requires documents to be clean enough for customer-facing retrieval; `strict` enforces the quality bar expected in regulated domains where incorrect retrieval has real-world consequences.
+
+---
+
+## How scoring works
+
+Each document receives a **readiness score from 0 to 100**, computed as a weighted sum of five dimensions:
+
+| Dimension | Weight | What it measures |
+|---|:---:|---|
+| Text extractability | 30% | Fraction of pages that yield actual text (vs. image-only scans) |
+| OCR cleanliness | 25% | `1.0 − OCR error rate` — proportion of text free from character-substitution artifacts |
+| Structural integrity | 20% | Heading hierarchy, table structure, list consistency |
+| Content density | 15% | Ratio of meaningful tokens to whitespace/boilerplate |
+| Metadata completeness | 10% | Presence of title, author, creation date |
+
+**Floor and ceiling rules** prevent misleading scores:
+- 0% extractable text → score capped at 20 (a scanned PDF with no OCR layer)
+- OCR error rate > 10% → score capped at 40 (severely corrupted text)
+- Empty document (no text, no content) → score 0
+
+The raw weighted sum is scaled to 0–100 and then clamped by any applicable ceiling. A score of 60+ (`standard` profile) means the document is likely usable in a production RAG pipeline without preprocessing; below 40 means critical issues need to be fixed first.
+
 ---
 
 ## Optional extras
@@ -289,19 +313,19 @@ pip install ragpreflight[llm]      # adds: LLM-powered query generation for retr
 
 ## The taxonomy: 33 failure modes, 7 pipeline stages
 
-ragpreflight is the first open-source tool grounded in a peer-reviewed RAG failure taxonomy. Each issue it raises is linked to one of 33 named failure modes across 7 pipeline stages:
+To our knowledge, ragpreflight is the first open-source tool grounded in a peer-reviewed RAG failure taxonomy. Each issue it raises is linked to one of 33 named failure modes across 7 pipeline stages:
 
 | Stage | Modes | ragpreflight coverage |
 |-------|-------|----------------------|
 | Ingestion | F1–F4 | F1 proxy · F3 direct · F4 risk signal |
 | Representation | F5–F6 | — (runtime required) |
-| Retrieval | F7–F12 | F7 direct · F11 proxy |
+| Retrieval | F7–F12 | F7 direct (`chunks`) · risk signal (`scan`) · F11 proxy |
 | Generation | F13–F17 | — (requires LLM outputs) |
 | Evaluation | F18–F19 | — |
 | Deployment | F20–F25 | F23 risk signal |
 | Agentic Orchestration | F26–F33 | — (requires agent traces) |
 
-**"2 direct + 4 proxy/risk + 27 runtime/unsupported" is honest strength, not a weakness. A tool claiming 33/33 detection is lying.**
+2 direct + 4 proxy/risk + 27 runtime or unsupported. Detection is heuristic-based and may produce false positives; use `ragpreflight coverage` to see exactly what is and isn't detected, and `--profile permissive` to relax thresholds.
 
 ```bash
 ragpreflight coverage   # see exactly what is and isn't detected
@@ -313,23 +337,27 @@ For runtime coverage (hallucination, faithfulness, latency): [DeepEval](https://
 
 ## External validation — olmOCR-bench
 
-ragpreflight scores were validated against [olmOCR-bench](https://huggingface.co/datasets/allenai/olmOCR-bench) (Poznanski et al., 2025), a public benchmark of 1,403 PDFs across 7 difficulty categories with known OCR accuracy from state-of-the-art models.
+ragpreflight scores were tested against [olmOCR-bench](https://huggingface.co/datasets/allenai/olmOCR-bench) (Poznanski et al., 2025), a public benchmark of 1,403 PDFs across 7 difficulty categories with known OCR accuracy from state-of-the-art models.
 
 **175 PDFs (25 per category, stratified random seed=42) were audited with no ground truth labels, no OCR outputs, and no LLM calls — purely static analysis.**
 
-| Category | ragpreflight mean score | olmOCR best accuracy | Match |
-|---|:---:|:---:|:---|
-| `old_scans` (historical LoC scans) | **45** | 44.5% | ✅ Near-exact |
-| `old_scans_math` | 59.7 | 75.1% | ✅ Hard, scored hard |
-| `long_tiny_text` | 73.0 | 81.7% | ✅ Medium difficulty |
-| `multi_column` | 82.4 | 79.4% | ✅ Layout complexity |
-| `headers_footers` | 84.7 | 93.4% | ✅ Easy, scored easy |
-| `arxiv_math` | 85.2 | 75.6% | ✅ Typeset, extractable |
-| `table_tests` | 86.4 | 70.2% | ⚠ ragpreflight detects text quality; table *structure reconstruction* requires runtime |
+| Category | ragpreflight mean score | olmOCR best accuracy |
+|---|:---:|:---:|
+| `old_scans` (historical LoC scans) | **45.0** | 44.5% |
+| `old_scans_math` | 59.7 | 75.1% |
+| `long_tiny_text` | 73.0 | 81.7% |
+| `multi_column` | 82.4 | 79.4% |
+| `headers_footers` | 84.7 | 93.4% |
+| `arxiv_math` | 85.2 | 75.6% |
+| `table_tests` | 86.4 | 70.2% |
 
-**Key finding:** The hardest category for OCR models (`old_scans`, 44.5% accuracy) is also the lowest scored by ragpreflight (mean 45). The ordering is consistent across all categories. Static pre-ingestion analysis predicts OCR and RAG difficulty without running a model.
+**Finding:** The hardest category for OCR models (`old_scans`, 44.5% accuracy) receives the lowest ragpreflight score (mean 45). Spearman rank correlation across all 7 categories is ρ = 0.21; excluding `table_tests` (where ragpreflight detects text quality but not table *structure reconstruction*, a runtime task) gives ρ = 0.60. Neither is statistically significant at n = 6–7 — a per-document analysis against olmOCR's per-PDF pass rates (175 data points) would provide a stronger test.
 
-→ [View the full HTML audit report](docs/olmocr-bench-report.html) — 175 PDFs with per-document scores, issue breakdowns, and Garani 2026 taxonomy links.
+Note: the ragpreflight score (0–100 readiness) and olmOCR accuracy (% correct extractions) measure different quantities and are not directly comparable. The comparison above tests whether relative difficulty ordering is preserved, not absolute values.
+
+**Reproducibility:** seed `42`, file list and audit script are in [`scripts/olmocr_bench/`](https://github.com/anusky95/ragpreflight/tree/main/scripts/olmocr_bench).
+
+→ [View the full HTML audit report](https://github.com/anusky95/ragpreflight/blob/main/docs/olmocr-bench-report.html) — 175 PDFs with per-document scores, issue breakdowns, and Garani 2026 taxonomy links.
 
 ---
 
@@ -370,13 +398,13 @@ If you use ragpreflight in research, please cite the paper above.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
+See [CONTRIBUTING.md](https://github.com/anusky95/ragpreflight/blob/main/CONTRIBUTING.md). Issues and PRs welcome.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/anusky95/ragpreflight/blob/main/LICENSE).
 
 ---
 

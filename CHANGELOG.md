@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-01
+
+### Changed
+
+- **HTML report redesigned**: SVG circular gauge, expandable issue cards with taxonomy links, dark mode support, IBM Plex typography, pip install suggestions per issue category.
+- **README revised per reviewer feedback**: olmOCR-bench section rewritten with Spearman rank correlation (ρ = 0.21 all categories, ρ = 0.60 excluding table_tests) and honest caveats about statistical power; removed "near-exact" claim and Match column; "first open-source tool" softened to "to our knowledge"; sample report fixed (0% extractable with OCR findings → 34% extractable with explanation); added "How scoring works" section documenting scoring weights and floor/ceiling rules; F7 coverage clarified as direct via `chunks`, risk signal via `scan`; comparison table scoped to pre-ingestion features; relative links replaced with absolute GitHub URLs.
+- **Defensive language removed**: dropped "honest strength, not a weakness" and "a tool claiming 33/33 is lying" from taxonomy section.
+
+### Added
+
+- **Trusted publishing workflow** (`.github/workflows/publish.yml`): GitHub Actions OIDC-based PyPI publishing — no long-lived API tokens.
+- **Benchmark reproducibility** (`scripts/olmocr_bench/`): sampling script, audit script, and full list of 175 PDF filenames (seed=42) for independent reproduction of the olmOCR-bench validation.
+- **Pip install suggestions**: each issue card in HTML reports suggests relevant tools (pytesseract for OCR, camelot-py for tables, ftfy for encoding, etc.).
+
+### Fixed
+
+- **OCR issue card title overflow**: multi-line OCR messages no longer dump full details into the card summary; `_summary_line()` extracts the first line.
+- **Sample report internal inconsistency** (M4): 0% extractable text now correctly shows 34% with explanation of OCR text layer.
+
 ## [0.2.0] — 2026-10-01
 
 ### Fixed
@@ -89,6 +108,7 @@ First public release. Grounded in Garani 2026 (doi:10.18653/v1/2026.trustnlp-mai
 - `scikit-learn` removed from `[full]` — was unused
 - Python minimum bumped to `>=3.10` (3.9 EOL)
 
-[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/anusky95/ragpreflight/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/anusky95/ragpreflight/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anusky95/ragpreflight/releases/tag/v0.1.0
