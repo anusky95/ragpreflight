@@ -256,7 +256,7 @@ All outputs are typed dataclasses, not dicts. Full type hints. Zero global state
 ```bash
 ragpreflight scan doc.pdf --profile permissive  # chatbots, internal tools
 ragpreflight scan doc.pdf --profile standard    # enterprise search (default)
-ragpreflight scan doc.pdf --profile strict      # medical, legal, financial
+ragpreflight scan doc.pdf --profile strict      # higher-risk workflows
 ```
 
 | Profile | Min score | OCR tolerance | Similarity threshold |
