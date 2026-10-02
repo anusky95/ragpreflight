@@ -6,7 +6,7 @@
 [![Downloads](https://img.shields.io/pypi/dm/ragpreflight.svg)](https://pypistats.org/packages/ragpreflight)
 [![DOI](https://img.shields.io/badge/paper-doi%3A10.18653%2Fv1%2F2026.trustnlp--main.27-blue)](https://doi.org/10.18653/v1/2026.trustnlp-main.27)
 
-**The pre-ingestion RAG audit tool. Catch document failures before you embed them — not after your chatbot starts hallucinating.**
+**The pre-ingestion RAG audit tool. Catch document and chunking problems before they enter your RAG index.**
 
 ```bash
 pip install ragpreflight
@@ -53,11 +53,11 @@ ragpreflight scan my_document.pdf
 7 issue(s) found  ·  Score: 38  ·  4 critical
 
 RAG Failure Taxonomy  (doi:10.18653/v1/2026.trustnlp-main.27)
-  OCR artifacts  → F3  Document Quality Failure       [direct]
-  Low extraction → F3  Document Quality Failure       [direct]
+  OCR artifacts  → F3  Layout Parsing Errors          [direct]
+  Low extraction → F3  Layout Parsing Errors          [direct]
   Tables         → F7  Chunking Boundary Errors       [risk signal]
   PII            → F23 PII / Compliance Leak          [risk signal]
-  No metadata    → F11 Low Recall / Ranking Failure   [risk signal]
+  No metadata    → F11 Low Recall / Ranking Failures  [risk signal]
 ```
 
 ---
@@ -81,7 +81,7 @@ It is grounded in peer-reviewed research: 33 failure modes across 7 pipeline sta
 
 ## How it compares
 
-ragpreflight **audits** documents; the tools below **process** them. Use ragpreflight to find quality issues before ingestion, then use a parser/converter to extract and chunk.
+ragpreflight **audits** documents; the tools below **process** them. Use ragpreflight to find quality issues before ingestion, then use a parser/converter to extract and chunk. *(Comparison as of October 2026; competitors evolve — verify against current docs.)*
 
 | | **ragpreflight** | Unstructured | Docling | LlamaParse | Marker |
 |---|:---:|:---:|:---:|:---:|:---:|
@@ -141,11 +141,9 @@ ragpreflight audit ./knowledge_base/ --format html --output audit.html
 ### Gate your ingestion pipeline (CI/CD)
 
 ```bash
-# Fail the pipeline if any document scores below 60
-ragpreflight score my_doc.pdf          # prints: 92
-
-score=$(ragpreflight score my_doc.pdf)
-[ "$score" -ge 60 ] || exit 1
+ragpreflight score my_doc.pdf                  # prints: 92
+ragpreflight score my_doc.pdf --min-score 60   # exit 1 if below 60
+ragpreflight score ./knowledge_base/           # corpus average score
 ```
 
 ### GitHub Actions integration
@@ -175,14 +173,8 @@ jobs:
           ragpreflight audit ./knowledge_base/ --json > audit.json
           ragpreflight audit ./knowledge_base/ --format sarif --output results.sarif
 
-      - name: Quality gate — fail on critical issues
-        run: |
-          score=$(ragpreflight score ./knowledge_base/ 2>/dev/null)
-          echo "Corpus average score: $score"
-          if [ "$score" -lt 60 ]; then
-            echo "::error::RAG corpus score $score is below threshold (60)"
-            exit 1
-          fi
+      - name: Quality gate — fail if score below 60
+        run: ragpreflight score ./knowledge_base/ --min-score 60
 
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
@@ -273,7 +265,7 @@ ragpreflight scan doc.pdf --profile strict      # medical, legal, financial
 | `standard` | 60 | < 5% | 0.90 |
 | `strict` | 80 | < 2% | 0.85 |
 
-Profile thresholds were chosen to match common risk tolerance levels: `permissive` accepts documents that are usable despite quality issues (internal tools, FAQ chatbots); `standard` requires documents to be clean enough for customer-facing retrieval; `strict` enforces the quality bar expected in regulated domains where incorrect retrieval has real-world consequences.
+Profile thresholds are operational defaults, not empirically validated production cutoffs. `permissive` is a lenient starting point for internal tools and chatbots; `standard` is a conservative default for customer-facing retrieval; `strict` is intended as a conservative default for higher-risk workflows. Adjust thresholds to your corpus and risk tolerance.
 
 ---
 
@@ -294,7 +286,7 @@ Each document receives a **readiness score from 0 to 100**, computed as a weight
 - OCR error rate > 10% → score capped at 40 (severely corrupted text)
 - Empty document (no text, no content) → score 0
 
-The raw weighted sum is scaled to 0–100 and then clamped by any applicable ceiling. A score of 60+ (`standard` profile) means the document is likely usable in a production RAG pipeline without preprocessing; below 40 means critical issues need to be fixed first.
+The readiness score is a **heuristic prioritization metric**, not a calibrated probability of downstream RAG success. The raw weighted sum is scaled to 0–100 and then clamped by any applicable ceiling. The weights are operational defaults, not empirically optimised; adjust thresholds to your corpus and risk tolerance.
 
 ---
 

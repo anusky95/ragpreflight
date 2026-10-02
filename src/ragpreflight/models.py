@@ -13,8 +13,8 @@ from typing import Literal
 class Severity(str, Enum):
     """Issue severity levels."""
 
-    CRITICAL = "critical"  # Will definitely cause RAG failures
-    WARNING = "warning"  # Likely to cause issues
+    CRITICAL = "critical"  # High likelihood of degrading ingestion or retrieval
+    WARNING = "warning"  # May cause retrieval quality issues
     INFO = "info"  # Worth knowing, may not cause problems
 
 

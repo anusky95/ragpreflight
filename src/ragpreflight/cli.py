@@ -5,7 +5,7 @@ Commands:
     ragpreflight audit <directory>   -- corpus audit
     ragpreflight chunks <file>       -- chunk analysis
     ragpreflight simulate <dir>      -- retrieval simulation
-    ragpreflight score <file>        -- print score only (for scripting)
+    ragpreflight score <file|dir>    -- print score only (for scripting)
 """
 
 from __future__ import annotations
@@ -137,8 +137,8 @@ def cmd_scan(
     fmt = "json" if output_json else output_format
     render_document_report(report, fmt=fmt, output=output, quiet=quiet)
 
-    # Non-zero exit code when score is 0 or there are critical issues
-    if report.critical_issues:
+    profile_data = get_profile(profile)
+    if report.score < profile_data["min_document_score"] or report.critical_issues:
         sys.exit(1)
 
 
@@ -247,8 +247,9 @@ def cmd_audit(
     fmt = "json" if output_json else output_format
     render_corpus_report(report, fmt=fmt, output=output, quiet=quiet)
 
-    # Exit 1 if any documents have critical issues
-    if any(d.critical_issues for d in report.documents):
+    if report.average_score < profile_data["min_document_score"] or any(
+        d.critical_issues for d in report.documents
+    ):
         sys.exit(1)
 
 
@@ -466,29 +467,65 @@ def cmd_simulate(
 
 
 @main.command("score")
-@click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option("--min-score", default=None, type=int, help="Exit 1 if any score is below this.")
+@click.option(
+    "--profile",
+    "-p",
+    default=None,
+    help="Use profile's min_document_score as --min-score threshold.",
+)
 @click.option("--max-size", default=100.0, show_default=True, help="Max file size in MB.")
-def cmd_score(filepath: str, max_size: float) -> None:
-    """Print the readiness score (0-100) and nothing else.
+def cmd_score(
+    paths: tuple[str, ...],
+    min_score: int | None,
+    profile: str | None,
+    max_size: float,
+) -> None:
+    """Print readiness scores (0-100) and nothing else.
 
-    Useful for shell scripting and CI/CD integration.
+    Accepts one or more files or directories. For directories, prints the
+    corpus average score.
 
     \b
     Examples:
-        ragpreflight score document.pdf         # prints: 73
-        score=$(ragpreflight score doc.pdf)
-        [ "$score" -ge 60 ] || exit 1       # fail CI if score < 60
+        ragpreflight score document.pdf
+        ragpreflight score a.pdf b.pdf c.md
+        ragpreflight score ./knowledge_base/
+        ragpreflight score doc.pdf --min-score 60
+        ragpreflight score doc.pdf --profile strict
     """
+    from ragpreflight.corpus import audit_corpus
     from ragpreflight.scanner import scan_document
 
-    try:
-        report = scan_document(filepath, max_file_size_mb=max_size)
-    except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-    except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}") from exc
+    threshold = min_score
+    if profile is not None:
+        from ragpreflight.profiles import get_profile
 
-    click.echo(report.score)
+        try:
+            threshold = get_profile(profile)["min_document_score"]
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--profile") from exc
+
+    failed = False
+    for path_str in paths:
+        p = Path(path_str)
+        try:
+            if p.is_dir():
+                report = audit_corpus(path_str, show_progress=False)
+                score = round(report.average_score)
+            else:
+                doc = scan_document(path_str, max_file_size_mb=max_size)
+                score = doc.score
+        except Exception as exc:
+            raise click.ClickException(f"{p.name}: {exc}") from exc
+
+        click.echo(score)
+        if threshold is not None and score < threshold:
+            failed = True
+
+    if failed:
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------

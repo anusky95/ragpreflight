@@ -236,7 +236,6 @@ SUPPORTED_EXTENSIONS = {
     ".markdown",
     ".pptx",
     ".xlsx",
-    ".xls",
     ".ipynb",
     ".srt",
     ".vtt",
