@@ -322,10 +322,10 @@ h1, h2, h3 { text-wrap: balance; }
   gap: 4px 16px; margin-top: 14px;
 }
 .meta-item { display: flex; flex-direction: column; min-width: 0; }
-.meta-item.meta-file { grid-column: 1 / -1; }
+.meta-filename { display: flex; flex-direction: column; margin-top: 10px; margin-bottom: 2px; min-width: 0; }
+.meta-filename .meta-value { word-break: break-all; font-size: 0.88rem; font-weight: 600; line-height: 1.4; }
 .meta-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); }
 .meta-value { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.meta-file .meta-value { word-break: break-all; font-size: 0.88rem; }
 
 /* Count chips */
 .counts-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
@@ -603,11 +603,11 @@ def _html_document_body(report: DocumentReport) -> str:
   {_svg_gauge(score, colour_var)}
   <div class="score-details">
     <span class="verdict-pill {verdict_cls}">{verdict_label}</span>
+    <div class="meta-filename">
+      <span class="meta-label">File</span>
+      <span class="meta-value">{e(Path(report.filepath).name)}</span>
+    </div>
     <div class="meta-grid">
-      <div class="meta-item meta-file">
-        <span class="meta-label">File</span>
-        <span class="meta-value">{e(Path(report.filepath).name)}</span>
-      </div>
       <div class="meta-item">
         <span class="meta-label">Format</span>
         <span class="meta-value">{e(report.file_format.upper())} &middot; {report.page_count} page(s)</span>
@@ -780,9 +780,9 @@ def _html_corpus_body(report: CorpusReport) -> str:
   <div class="score-details">
     <span class="verdict-pill {verdict_cls}">{verdict_label}</span>
     <div class="meta-grid">
-      <div class="meta-item meta-file">
+      <div class="meta-item">
         <span class="meta-label">Directory</span>
-        <span class="meta-value">{e(report.directory)}</span>
+        <span class="meta-value" style="word-break:break-all;font-size:0.88rem;">{e(report.directory)}</span>
       </div>
       <div class="meta-item">
         <span class="meta-label">Documents</span>
