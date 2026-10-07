@@ -8,7 +8,8 @@
 
 **The pre-flight check every RAG pipeline runs.** Audit documents *before* you embed them — OCR artifacts, extractability, tables, PII, metadata, chunking — with a 0–100 readiness score and fix suggestions. Fully offline. No API keys. No model.
 
-![demo](demo.gif)
+<!-- ![demo](demo.gif) -->
+
 
 ```bash
 pip install ragpreflight
