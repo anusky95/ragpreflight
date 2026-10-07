@@ -199,3 +199,86 @@ class TestDocumentReportContract:
         json.dumps(d)
         assert "score" in d
         assert "issues" in d
+
+
+def _make_pdf(path: Path, page_texts: list[str]) -> Path:
+    import pymupdf
+
+    doc = pymupdf.open()
+    for text in page_texts:
+        page = doc.new_page()
+        if text == "IMG":
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800), 0)
+            pix.clear_with(200)
+            page.insert_image(page.rect, pixmap=pix)
+        elif text:
+            page.insert_text((72, 72), text)
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+class TestPreLaunchRegressions:
+    def test_tiny_text_pdf_not_flagged_as_scanned(self, tmp_path: Path) -> None:
+        pdf = _make_pdf(tmp_path / "tiny.pdf", ["one <a@b.com>"])
+        report = scan_document(pdf)
+        assert report.text_extractable_ratio == 1.0
+        assert not any("scanned PDF" in i.message for i in report.issues)
+        assert any("Near-empty page" in i.message for i in report.issues)
+
+    def test_scanned_pages_with_page_number_stamps_still_flagged(self, tmp_path: Path) -> None:
+        import pymupdf
+
+        doc = pymupdf.open()
+        for n in range(1, 4):
+            page = doc.new_page()
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 800), 0)
+            pix.clear_with(200)
+            page.insert_image(page.rect, pixmap=pix)
+            page.insert_text((280, 820), f"Page {n}", fontsize=8)
+        pdf = tmp_path / "stamped_scan.pdf"
+        doc.save(str(pdf))
+        doc.close()
+        report = scan_document(pdf)
+        assert report.text_extractable_ratio == 0.0
+        assert any("scanned PDF" in i.message for i in report.issues)
+        assert report.score <= 20
+
+    def test_image_only_pages_still_flagged(self, tmp_path: Path) -> None:
+        pdf = _make_pdf(tmp_path / "half.pdf", ["IMG", "IMG", "IMG", "word " * 20])
+        report = scan_document(pdf)
+        assert report.text_extractable_ratio == 0.25
+        assert any(i.severity == Severity.CRITICAL for i in report.issues)
+
+    def test_half_image_only_pdf_is_critical_and_capped(self, tmp_path: Path) -> None:
+        body = "The committee reviewed the quarterly operations report in detail. " * 5
+        pdf = _make_pdf(tmp_path / "half.pdf", ["IMG", "IMG", body, body])
+        report = scan_document(pdf)
+        assert report.text_extractable_ratio == 0.5
+        assert any(i.severity == Severity.CRITICAL for i in report.issues)
+        assert report.score <= 50
+
+    def test_blank_back_page_not_flagged_as_scanned(self, tmp_path: Path) -> None:
+        body = "The committee reviewed the quarterly operations report in detail. " * 5
+        pdf = _make_pdf(tmp_path / "letter.pdf", [body, ""])
+        report = scan_document(pdf)
+        assert report.text_extractable_ratio == 1.0
+        assert not any(i.severity == Severity.CRITICAL for i in report.issues)
+        assert any("Blank page" in i.message for i in report.issues)
+        assert report.score >= 60
+
+    @pytest.mark.parametrize(
+        "text",
+        ["Contact jane@example.com", "SSN 123-45-6789 and 987-65-4321"],
+    )
+    def test_pii_fires_below_three_hits(self, tmp_path: Path, text: str) -> None:
+        pdf = _make_pdf(tmp_path / "pii.pdf", [text])
+        report = scan_document(pdf)
+        assert any(i.message.startswith("Possible PII") for i in report.issues)
+
+    def test_reversed_table_preview_detected(self) -> None:
+        from ragpreflight.scanner import _preview_looks_reversed
+
+        assert _preview_looks_reversed("ehT | waL | lliw")
+        assert _preview_looks_reversed("tI | si | ni")
+        assert not _preview_looks_reversed("Model | BLEU | Training Cost")

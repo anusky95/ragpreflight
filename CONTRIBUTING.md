@@ -1,13 +1,13 @@
-# Contributing to RAGCheck
+# Contributing to ragpreflight
 
-Thank you for your interest in contributing! This guide will help you set up your development environment and understand our conventions.
+Thanks for wanting to help — ragpreflight's goal is to become the pre-flight check every RAG pipeline runs, and that only happens with contributors. This guide gets you from zero to a merged PR.
 
-## Dev Setup
+## Dev setup
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/your-fork/ragcheck.git
-cd ragcheck
+git clone https://github.com/<your-username>/ragpreflight.git
+cd ragpreflight
 
 # 2. Create a virtual environment
 python -m venv .venv
@@ -16,64 +16,85 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 # 3. Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# 4. (Optional) Full extras for all features
-pip install -e ".[dev,full,llm]"
+# 4. (Optional) Full extras — chunk analysis, retrieval simulation, contradiction detection
+pip install -e ".[dev,full]"
 
 # 5. Verify setup
-ragcheck --version
-pytest -q
+ragpreflight --version
+pytest -q -m "not slow"
 ```
 
-## Running Tests
+## Running tests
 
 ```bash
-pytest                      # all tests
-pytest tests/test_scanner.py  # one module
-pytest -k "test_scan"       # by name pattern
-pytest --cov=ragcheck        # with coverage
+pytest -q -m "not slow"        # fast suite (default for local dev)
+pytest -q --slow               # everything, incl. slow model-loading tests
+pytest tests/test_scanner.py   # one module
+pytest -k "test_scan"          # by name pattern
+pytest --cov=ragpreflight      # with coverage
 ```
 
-## Code Style
+Markers: `slow` = tests that load sentence-transformers models. They are skipped unless you pass `--slow`.
 
-We use **ruff** for formatting and linting. Line length is 99 characters.
+## Code style
+
+We use **ruff** (line length 99) and **mypy** (strict). All run in CI — your PR must pass before merge.
 
 ```bash
-ruff check src/ tests/      # lint
-ruff format src/ tests/     # auto-format
-mypy src/ragcheck/           # type check
+ruff check src/ tests/     # lint
+ruff format src/ tests/    # auto-format
+mypy src/ragpreflight/     # type check
 ```
 
-All of the above run automatically in CI. Your PR must pass lint + tests before it can be merged.
+## Design principles (read before contributing)
 
-## Design Principles (Read Before Contributing)
+1. **Zero API keys for core.** Everything in the base install runs offline. LLM-assisted features stay behind `--use-llm` flags in the `[llm]` extra.
+2. **Lightweight base install.** Heavy deps go in `[full]` or `[llm]` — never in core.
+3. **Never crash on bad input.** Wrap file I/O in try/except. Return errors, not tracebacks.
+4. **Typed dataclasses for all outputs.** Public functions return typed dataclasses (`Issue`, `DocumentReport`, …), not dicts.
+5. **Tests alongside code.** Every module has a corresponding test file in `tests/`.
+6. **No `print()` in library code.** Use `logging` everywhere; `click.echo()` in the CLI only.
+7. **Honest coverage claims.** Every issue links to a Garani 2026 failure mode with a declared relationship (`direct`, `proxy`, `risk_signal`). Don't claim detection you don't have — run `ragpreflight coverage` and update it.
 
-1. **Zero API keys for core functionality.** LLM-powered features must be behind `--use-llm` flags.
-2. **Lightweight base install.** Heavy deps go in `[full]` or `[llm]` extras — never in core.
-3. **Never crash on bad input.** Wrap all file I/O in try/except. Return errors, not tracebacks.
-4. **Typed dataclasses for all outputs.** Public functions return typed dataclasses, not dicts.
-5. **Tests alongside code.** Every module has a corresponding test file.
-6. **No `print()` in library code.** Use `logging` everywhere; `click.echo()` in CLI only.
+## Adding a new check
 
-## PR Guidelines
+Checks live in `src/ragpreflight/scanner.py`. There are two kinds:
 
-- Keep PRs focused: one feature or fix per PR
-- Update tests alongside your changes
-- Add your change to `CHANGELOG.md` under `[Unreleased]`
-- Make sure `pytest` and `ruff check` pass locally before opening a PR
+**A. Cross-format check** (e.g. a new PII pattern, a new OCR artifact):
+1. Find the shared check it belongs with — `_detect_pii_issues()`, the OCR detectors, `_build_language_issue()`, etc.
+2. Emit an `Issue` with `category` (one of `IssueCategory`: `ocr`, `encoding`, `structure`, `content`, `metadata`, `chunking`, `duplication`, `staleness`), `severity` (`critical` / `warning` / `info`), a concrete `message`, an actionable `suggestion`, and `taxonomy_refs` linking the Garani 2026 mode(s) it maps to.
+3. Add a test in `tests/test_scanner.py` with a fixture under `tests/fixtures/` if needed.
 
-## Adding a New File Format
+**B. Format-specific logic** (inside `_scan_pdf`, `_scan_docx`, `_scan_html`, …): follow the existing pattern in that function and add fixtures + tests the same way.
 
-1. Add the extension to `SUPPORTED_EXTENSIONS` in `_constants.py`
-2. Write a `_scan_<format>` function in `scanner.py` following the existing pattern
-3. Register it in `_FORMAT_SCANNERS` in `scanner.py`
-4. Add at least one test fixture in `tests/fixtures/`
-5. Write tests in `tests/test_scanner.py`
+If your check maps to a SARIF-reportable category, it's picked up automatically — the SARIF rules (`OCR001`, `ENC001`, `STR001`, `CNT001`, `META001`, `CHK001`, `DUP001`, `STA001` in `report.py`) are keyed by category.
 
-## Reporting Bugs
+## Adding a new file format
 
-Open an issue at [github.com/ragcheck/ragcheck/issues](https://github.com/ragcheck/ragcheck/issues) with:
-- RAGCheck version (`ragcheck --version`)
-- Python version
-- OS
-- Command or code that triggered the bug
-- Full error output (with `--verbose` if applicable)
+1. Add the extension to `SUPPORTED_EXTENSIONS` in `src/ragpreflight/_constants.py`.
+2. Write a `_scan_<format>()` function in `src/ragpreflight/scanner.py` following the existing pattern (return `_ScanResult`; never raise on bad input).
+3. Register it in the format-dispatch map in `scanner.py`.
+4. Add at least one fixture in `tests/fixtures/`.
+5. Write tests in `tests/test_scanner.py`.
+6. Add a row to the "Supported file formats" table in `README.md`.
+
+## PR process
+
+- One feature or fix per PR. Keep it focused.
+- Update tests alongside your changes.
+- Add a line to `CHANGELOG.md` under `[Unreleased]`.
+- Run `pytest -q -m "not slow"`, `ruff check src/ tests/`, and `ruff format --check src/ tests/` locally first.
+
+## Reporting bugs
+
+Open an issue at [github.com/anusky95/ragpreflight/issues](https://github.com/anusky95/ragpreflight/issues) with:
+
+- ragpreflight version (`ragpreflight --version`)
+- Python version and OS
+- The exact command (or minimal Python snippet) that triggered it
+- Full error output (re-run with `--verbose` / `-v` if it's a scan failure)
+- The problem file if you can share it (or a minimal reproducer — see `tests/fixtures/` for the pattern)
+
+## Good first issues
+
+New here? Start with an issue labelled [`good first issue`](https://github.com/anusky95/ragpreflight/labels/good%20first%20issue) — each one names the exact files to touch. If you get stuck, ask in the issue; maintainers answer.

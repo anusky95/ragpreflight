@@ -116,7 +116,7 @@ def _render_document_terminal(report: DocumentReport) -> None:
             issue.category.value,
             issue_text,
             issue.location or "—",
-            textwrap.shorten(issue.suggestion or "—", width=60),
+            issue.suggestion or "—",
         )
 
     console.print(table)

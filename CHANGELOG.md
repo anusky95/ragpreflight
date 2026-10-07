@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-10-07
+
+### Changed
+
+- **Scoring (behavior change):** a PDF where half or more of the pages have no usable text layer is now reported as CRITICAL and its score is capped at 50 (previously WARNING, uncapped — a 50%-image PDF scored 74). Such documents now fail the `standard` profile (min 60), so CI gates may start failing on partially scanned PDFs.
+- **PII detection threshold lowered:** emails, SSNs, phone numbers and credit card numbers are flagged from the first hit (previously 3+). IP addresses still need 2 hits, since dotted version strings resemble IPs.
+- **README rewritten** with real CLI output; **CONTRIBUTING.md** updated (correct `--slow` flag, ragpreflight naming).
+
+### Fixed
+
+- **Short text-only PDFs misreported as scanned:** a page with fewer than 10 words was counted as having no text, so a 1-page, 2-word PDF got "0% extractable … likely a scanned PDF" alongside "Near-empty page (2 words)". Sparse pages are now treated as scanned only when images cover at least half the page, so scans carrying page-number or Bates stamps are still caught. Blank pages (no text, no images) are reported as INFO and excluded from the extractable ratio.
+- **Garbled table previews:** previews with reversed glyph order (e.g. `ehT | waL | lliw`) are no longer shown, and table previews moved out of the Location column.
+- **Truncated fix text:** the Fix column no longer cuts suggestions off with `[...]`.
+- **Pre-commit hooks ran on every file:** `types_or: [pdf, file]` matched all files, including source code; hooks now only match supported document extensions.
+
 ## [0.2.1] — 2026-10-01
 
 ### Changed
@@ -108,7 +123,8 @@ First public release. Grounded in Garani 2026 (doi:10.18653/v1/2026.trustnlp-mai
 - `scikit-learn` removed from `[full]` — was unused
 - Python minimum bumped to `>=3.10` (3.9 EOL)
 
-[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/anusky95/ragpreflight/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/anusky95/ragpreflight/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/anusky95/ragpreflight/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/anusky95/ragpreflight/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/anusky95/ragpreflight/releases/tag/v0.1.0

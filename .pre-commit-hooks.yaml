@@ -1,19 +1,37 @@
+# .pre-commit-hooks.yaml — consume ragpreflight as a pre-commit hook.
+#
+# HOW USERS CONSUME IT (in their own .pre-commit-config.yaml):
+#
+#   - repo: https://github.com/anusky95/ragpreflight
+#     rev: v0.2.2                       # pin to a release tag
+#     hooks:
+#       - id: ragpreflight-scan         # fail the commit if a staged doc scores < 60
+#       - id: ragpreflight-scan-strict  # fail the commit if a staged doc scores < 80
+#
+# WHY `score`: `ragpreflight score` prints one score per file and exits 1 when
+# any file falls below the threshold — exactly the contract pre-commit expects.
+# `scan`/`audit` also exit 1 on critical issues, but their rich reports are
+# noisy in a commit hook; `score` stays quiet and lets the gate speak.
+#
+# TIP for consumers: add `exclude:` for fixtures, generated docs, or vendored
+# files you don't want gated, e.g.  exclude: '^tests/fixtures/'.
+
 - id: ragpreflight-scan
   name: ragpreflight — document readiness gate
-  description: Fail the commit if any staged document scores below the standard threshold (60).
+  description: Fail the commit if any staged document scores below the standard threshold (60/100).
   language: python
   entry: ragpreflight score --min-score 60
-  types_or: [pdf, file]
+  files: '\.(pdf|docx|txt|csv|tsv|html?|md|markdown|pptx|xlsx|ipynb|srt|vtt)$'
   args: []
   pass_filenames: true
   stages: [pre-commit]
 
 - id: ragpreflight-scan-strict
   name: ragpreflight — strict document readiness gate
-  description: Fail the commit if any staged document scores below the strict threshold (80).
+  description: Fail the commit if any staged document scores below the strict threshold (80/100).
   language: python
   entry: ragpreflight score --min-score 80
-  types_or: [pdf, file]
+  files: '\.(pdf|docx|txt|csv|tsv|html?|md|markdown|pptx|xlsx|ipynb|srt|vtt)$'
   args: []
   pass_filenames: true
   stages: [pre-commit]

@@ -166,6 +166,10 @@ MIN_WORD_LENGTH = 2
 # Text considered "empty" if fewer than this many words
 EMPTY_PAGE_WORD_THRESHOLD = 10
 
+# A sparse page (< EMPTY_PAGE_WORD_THRESHOLD words) whose images cover at least this
+# fraction of the page is treated as scanned: the few words are stamps or page numbers.
+SCANNED_PAGE_IMAGE_COVERAGE = 0.5
+
 # File size limits
 DEFAULT_MAX_FILE_SIZE_MB = 100
 HARD_MAX_FILE_SIZE_MB = 500
@@ -253,8 +257,15 @@ PII_PATTERNS: dict[str, str] = {
     "ip_address": r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
 }
 
-# Minimum PII hits before raising a WARNING (avoids false-positive noise)
-PII_MIN_HITS = 3
+# Minimum hits per PII type before raising a WARNING. IPs need 2 because dotted
+# version strings (e.g. "1.2.3.4") false-positive on the IP regex.
+PII_MIN_HITS: dict[str, int] = {
+    "email": 1,
+    "us_ssn": 1,
+    "us_phone": 1,
+    "credit_card": 1,
+    "ip_address": 2,
+}
 
 # ---------------------------------------------------------------------------
 # Formula / equation detection patterns (PDF text artifacts)

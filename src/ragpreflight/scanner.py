@@ -17,6 +17,7 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ragpreflight._constants import (
     CONTROL_CHAR_PATTERN,
@@ -34,6 +35,7 @@ from ragpreflight._constants import (
     PDF_METADATA_FIELDS,
     PII_MIN_HITS,
     PII_PATTERNS,
+    SCANNED_PAGE_IMAGE_COVERAGE,
     SCORE_WEIGHTS,
 )
 from ragpreflight.models import DocumentReport, Issue, IssueCategory, Severity, TaxonomyReference
@@ -237,6 +239,7 @@ class _ScanResult:
         "structural_score",
         "metadata_score",
         "content_density",
+        "score_cap",
     )
 
     def __init__(
@@ -249,7 +252,9 @@ class _ScanResult:
         structural_score: float = 1.0,
         metadata_score: float = 0.0,
         content_density: float = 1.0,
+        score_cap: int = 100,
     ) -> None:
+        self.score_cap = score_cap
         self.issues = issues
         self.page_count = page_count
         self.text_extractable_ratio = clamp(text_extractable_ratio)
@@ -276,6 +281,7 @@ def _compute_score(result: _ScanResult) -> int:
 
     Floor/ceiling logic:
         - 0% extractable text → score capped at 20 (scanned PDF with no OCR)
+        - Scanner-specific cap via result.score_cap (PDF: ≤50% pages with text → 50)
         - OCR error rate > 10% → score capped at 40 (severely corrupted text)
         - Empty document (0 content density) → score 0
     """
@@ -292,6 +298,7 @@ def _compute_score(result: _ScanResult) -> int:
     )
     score = max(0, min(100, round(raw * 100)))
 
+    score = min(score, result.score_cap)
     if result.text_extractable_ratio == 0.0:
         score = min(score, 20)
     if result.ocr_error_rate > 0.10:
@@ -541,7 +548,8 @@ def _scan_pdf(path: Path) -> _ScanResult:
 
     issues: list[Issue] = []
     page_texts: list[str] = []
-    pages_with_text = 0
+    pages_with_any_text = 0
+    blank_pages = 0
 
     try:
         doc = fitz.open(str(path))
@@ -571,21 +579,40 @@ def _scan_pdf(path: Path) -> _ScanResult:
             text = page.get_text("text")  # type: ignore[attr-defined]
             page_texts.append(text)
             word_count = len(text.split())
-            if word_count >= EMPTY_PAGE_WORD_THRESHOLD:
-                pages_with_text += 1
-            elif word_count == 0:
+            sparse = word_count < EMPTY_PAGE_WORD_THRESHOLD
+            coverage = _image_coverage(page) if sparse else 0.0
+            if word_count == 0 and coverage == 0.0:
+                blank_pages += 1
+                issues.append(
+                    Issue(
+                        category=IssueCategory.CONTENT,
+                        severity=Severity.INFO,
+                        message="Blank page (no text, no images).",
+                        location=f"page {page_num + 1}",
+                        suggestion="Remove blank pages or ignore them during ingestion.",
+                    )
+                )
+                continue
+            if word_count == 0 or coverage >= SCANNED_PAGE_IMAGE_COVERAGE:
+                detail = (
+                    "Page yields no extractable text"
+                    if word_count == 0
+                    else f"Page is mostly an image with only {word_count} word(s) of text"
+                )
                 issues.append(
                     Issue(
                         category=IssueCategory.CONTENT,
                         severity=Severity.WARNING,
-                        message="Page yields no extractable text — may be a scanned image.",
+                        message=f"{detail} — may be a scanned image.",
                         location=f"page {page_num + 1}",
                         suggestion=(
                             "Run OCR (e.g. Tesseract) on image-only pages before ingestion."
                         ),
                     )
                 )
-            elif word_count < EMPTY_PAGE_WORD_THRESHOLD:
+                continue
+            pages_with_any_text += 1
+            if sparse:
                 issues.append(
                     Issue(
                         category=IssueCategory.CONTENT,
@@ -599,9 +626,10 @@ def _scan_pdf(path: Path) -> _ScanResult:
             logger.debug("Error reading page %d of %s: %s", page_num + 1, path, exc)
             page_texts.append("")
 
-    text_extractable_ratio = pages_with_text / page_count if page_count > 0 else 0.0
+    content_pages = page_count - blank_pages
+    text_extractable_ratio = pages_with_any_text / content_pages if content_pages > 0 else 0.0
 
-    if text_extractable_ratio < 0.5:
+    if text_extractable_ratio <= 0.5:
         issues.append(
             Issue(
                 category=IssueCategory.CONTENT,
@@ -679,7 +707,26 @@ def _scan_pdf(path: Path) -> _ScanResult:
         structural_score=structural_score,
         metadata_score=metadata_score,
         content_density=content_density,
+        score_cap=50 if text_extractable_ratio <= 0.5 else 100,
     )
+
+
+def _image_coverage(page: Any) -> float:
+    """Return the fraction (0.0–1.0) of the page area covered by images."""
+    try:
+        rect = page.rect
+        page_area = rect.width * rect.height
+        if page_area <= 0:
+            return 0.0
+        covered = 0.0
+        for info in page.get_image_info():
+            x0, y0, x1, y1 = info["bbox"]
+            w = max(0.0, min(x1, rect.x1) - max(x0, rect.x0))
+            h = max(0.0, min(y1, rect.y1) - max(y0, rect.y0))
+            covered += w * h
+        return clamp(covered / page_area)
+    except Exception:
+        return 0.0
 
 
 def _detect_header_footer_noise(page_texts: list[str]) -> list[Issue]:
@@ -813,6 +860,21 @@ def _score_pdf_metadata(metadata: dict, issues: list[Issue]) -> float:
     return score
 
 
+def _preview_looks_reversed(preview: str) -> bool:
+    """Return True if table cells look like right-to-left glyph order (e.g. "ehT | waL").
+
+    Some PDFs store glyphs in reverse order; pdfplumber then yields reversed words.
+    A reversed Title-case word starts lowercase and ends uppercase.
+    """
+    cells = [c.strip() for c in preview.split("|") if c.strip()]
+    if not cells:
+        return False
+    reversed_cells = sum(
+        1 for c in cells for w in c.split() if len(w) > 1 and w[0].islower() and w[-1].isupper()
+    )
+    return reversed_cells >= max(1, len(cells) // 2)
+
+
 def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
     """Use pdfplumber to detect tables and structural issues.
 
@@ -832,6 +894,7 @@ def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
         return 1.0
 
     table_details: list[str] = []
+    table_previews: list[str] = []
     table_count = 0
     try:
         with pdfplumber.open(str(path)) as pdf:
@@ -845,16 +908,14 @@ def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
                         rows = tbl.extract()
                         n_rows = len(rows) if rows else 0
                         n_cols = len(rows[0]) if rows and rows[0] else 0
-                        preview = ""
+                        table_details.append(f"pg {page_num}: {n_rows}×{n_cols}")
                         if rows and rows[0]:
                             first_cells = [
                                 str(c or "").strip()[:30].replace("\n", " ") for c in rows[0][:3]
                             ]
                             preview = " | ".join(c for c in first_cells if c)
-                        detail = f"pg {page_num}: {n_rows}×{n_cols}"
-                        if preview:
-                            detail += f' "{preview}"'
-                        table_details.append(detail)
+                            if preview and not _preview_looks_reversed(preview):
+                                table_previews.append(f'pg {page_num}: "{preview}"')
                 except Exception:
                     pass
     except Exception:
@@ -871,6 +932,7 @@ def _check_pdf_structure(path: Path, issues: list[Issue]) -> float:
                 severity=Severity.WARNING,
                 message=f"{table_count} table(s) detected. Tables often chunk poorly as plain text.",
                 location=detail_lines,
+                context=" · ".join(table_previews[:3]) or None,
                 suggestion=(
                     "Use a table-aware extractor (e.g. pdfplumber, Camelot, AWS Textract) "
                     "and convert tables to Markdown or CSV before chunking."
@@ -1424,7 +1486,7 @@ def _detect_pii_issues(text: str) -> list[Issue]:
     for pii_type, pattern in PII_PATTERNS.items():
         try:
             hits = re.findall(pattern, text)
-            if len(hits) >= PII_MIN_HITS:
+            if len(hits) >= PII_MIN_HITS.get(pii_type, 1):
                 samples = [_mask_pii(h, pii_type) for h in hits[:3]]
                 issues.append(
                     Issue(
@@ -1468,7 +1530,7 @@ def _detect_pii_issues_paged(page_texts: list[tuple[int, str]]) -> list[Issue]:
         except re.error:
             continue
 
-        if len(all_hits) < PII_MIN_HITS:
+        if not all_hits or len(all_hits) < PII_MIN_HITS.get(pii_type, 1):
             continue
 
         samples = [_mask_pii(h, pii_type) for h in all_hits[:3]]
