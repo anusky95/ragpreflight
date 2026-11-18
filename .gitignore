@@ -42,3 +42,8 @@ claude-session-history.md
 PLAN_*.md
 TECHNICAL_REFERENCE.md
 research/
+
+# ragpreflight outputs
+ragpreflight-before-after.html
+*.ragpreflight.html
+report.html

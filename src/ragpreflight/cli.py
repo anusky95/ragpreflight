@@ -1,720 +1,290 @@
-"""Click CLI entry point for ragpreflight.
-
-Commands:
-    ragpreflight scan <file>         -- single document scan
-    ragpreflight audit <directory>   -- corpus audit
-    ragpreflight chunks <file>       -- chunk analysis
-    ragpreflight simulate <dir>      -- retrieval simulation
-    ragpreflight score <file|dir>    -- print score only (for scripting)
-"""
+"""Command line: `ragpreflight PATH`, `ragpreflight demo`, `ragpreflight explain F14`, `ragpreflight coverage`."""
 
 from __future__ import annotations
 
 import json
-import logging
+import shutil
 import sys
+import tempfile
+import time
+from importlib import resources
 from pathlib import Path
 
 import click
+from rich.console import Console
 
-from ragpreflight import __version__
-from ragpreflight.config import load_config
+from . import __version__
+from .models import Severity
+from .report import fancy, print_terminal, to_html, to_json, to_markdown
+from .scan import scan
+from .taxonomy import COVERED, MODES, PAPER_URL
 
-# ---------------------------------------------------------------------------
-# Root group
-# ---------------------------------------------------------------------------
-
-CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"], "max_content_width": 100}
+COMMANDS = {"scan", "view", "chunks", "ab", "demo", "explain", "coverage", "--help", "-h", "--version"}
 
 
-@click.group(context_settings=CONTEXT_SETTINGS)
-@click.version_option(__version__, "-V", "--version", message="ragpreflight %(version)s")
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    default=False,
-    help="Enable debug logging.",
-)
-@click.pass_context
-def main(ctx: click.Context, verbose: bool) -> None:
-    """ragpreflight — score document readiness for RAG pipelines.
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+@click.version_option(__version__, prog_name="ragpreflight")
+def cli() -> None:
+    """Lint your knowledge before your agent reads it.
 
     \b
-    Config file: place a .ragpreflight.toml (TOML) in your project root or home
-    directory to set defaults. CLI flags always override config values.
-
-    \b
-    Run any command with --help for details:
-        ragpreflight scan --help
-        ragpreflight audit --help
-        ragpreflight chunks --help
-        ragpreflight simulate --help
+      ragpreflight ./docs              scan a folder (or one file)
+      ragpreflight demo                see it catch a real-world failure in 2 seconds
+      ragpreflight explain F14         what a failure mode means
+      ragpreflight coverage            what is and isn't checked
     """
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
-    ctx.ensure_object(dict)
-    ctx.obj["config"] = load_config()
 
 
-# ---------------------------------------------------------------------------
-# ragpreflight scan
-# ---------------------------------------------------------------------------
+def _run(path: str, fmt: str, out: str | None, fail_on: str, only: str | None, skip: str | None,
+         show_all: bool, console: Console) -> int:
+    from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
-
-@main.command("scan")
-@click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
-@click.option(
-    "--profile",
-    "-p",
-    default="standard",
-    show_default=True,
-    help="Quality profile: permissive | standard | strict | medical | legal | financial",
-)
-@click.option("--json", "output_json", is_flag=True, default=False, help="Output as JSON.")
-@click.option("--quiet", "-q", is_flag=True, default=False, help="Print score only.")
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["terminal", "json", "html", "sarif"]),
-    default="terminal",
-    show_default=True,
-    help="Output format.",
-)
-@click.option(
-    "--output",
-    "-o",
-    default=None,
-    help="Write output to this file (for --format html/json/sarif).",
-)
-@click.option("--max-size", default=100.0, show_default=True, help="Max file size in MB.")
-@click.pass_context
-def cmd_scan(
-    ctx: click.Context,
-    filepath: str,
-    profile: str,
-    output_json: bool,
-    quiet: bool,
-    output_format: str,
-    output: str | None,
-    max_size: float,
-) -> None:
-    """Scan a single document and report its RAG readiness score.
-
-    \b
-    Examples:
-        ragpreflight scan document.pdf
-        ragpreflight scan document.pdf --profile strict --json
-        ragpreflight scan document.pdf --format html --output report.html
-    """
-    from ragpreflight.profiles import get_profile
-    from ragpreflight.report import render_document_report
-    from ragpreflight.scanner import scan_document
-
-    # Apply config file defaults (CLI flags take precedence via Click defaults)
-    cfg = (ctx.obj or {}).get("config", {})
-    if profile == "standard" and "profile" in cfg:
-        profile = cfg["profile"]
-    if not quiet and cfg.get("quiet"):
-        quiet = True
-    if output_format == "terminal" and "output_format" in cfg:
-        output_format = cfg["output_format"]
-
+    t0 = time.perf_counter()
+    err = Console(stderr=True)
     try:
-        get_profile(profile)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile") from exc
+        with Progress(TextColumn("Reading documents"), BarColumn(), MofNCompleteColumn(),
+                      TimeElapsedColumn(), console=err, transient=True,
+                      disable=not err.is_terminal) as bar:
+            task = bar.add_task("read", total=None)
+            report = scan(path, set(only.split(",")) if only else None,
+                          set(skip.split(",")) if skip else None,
+                          progress=lambda done, total: bar.update(task, completed=done, total=total))
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        return 2
+    elapsed = time.perf_counter() - t0
+    if not report.documents:
+        console.print(f"[yellow]No supported files found in {path}[/yellow] (pdf, docx, md, txt, html)")
+        return 2
+    def html_for_out(r):  # links to source files relative to where the report is saved
+        return to_html(r, Path(out).resolve().parent if out else None)
 
-    try:
-        report = scan_document(filepath, max_file_size_mb=max_size)
-    except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-    except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}") from exc
-
-    fmt = "json" if output_json else output_format
-    render_document_report(report, fmt=fmt, output=output, quiet=quiet)
-
-    profile_data = get_profile(profile)
-    if report.score < profile_data["min_document_score"] or report.critical_issues:
-        sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
-# ragpreflight audit
-# ---------------------------------------------------------------------------
-
-
-@main.command("audit")
-@click.argument("directory", type=click.Path(exists=True, file_okay=False))
-@click.option(
-    "--profile",
-    "-p",
-    default="standard",
-    show_default=True,
-    help="Quality profile: permissive | standard | strict | medical | legal | financial",
-)
-@click.option("--json", "output_json", is_flag=True, default=False, help="Output as JSON.")
-@click.option("--quiet", "-q", is_flag=True, default=False, help="Print average score only.")
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["terminal", "json", "html", "sarif"]),
-    default="terminal",
-    show_default=True,
-    help="Output format.",
-)
-@click.option("--output", "-o", default=None, help="Write output to this file.")
-@click.option("--no-progress", is_flag=True, default=False, help="Disable progress bar.")
-@click.option(
-    "--no-parallel",
-    is_flag=True,
-    default=False,
-    help="Disable parallel scanning (scan sequentially).",
-)
-@click.option(
-    "--workers", default=4, show_default=True, help="Thread pool size for parallel scanning."
-)
-@click.option(
-    "--cache",
-    is_flag=True,
-    default=False,
-    help="Cache scan results; re-use on unchanged files (incremental).",
-)
-@click.option(
-    "--contradictions",
-    is_flag=True,
-    default=False,
-    help="Detect documents covering the same topic (requires ragpreflight[full]).",
-)
-@click.pass_context
-def cmd_audit(
-    ctx: click.Context,
-    directory: str,
-    profile: str,
-    output_json: bool,
-    quiet: bool,
-    output_format: str,
-    output: str | None,
-    no_progress: bool,
-    no_parallel: bool,
-    workers: int,
-    cache: bool,
-    contradictions: bool,
-) -> None:
-    """Audit all documents in a directory.
-
-    \b
-    Examples:
-        ragpreflight audit ./knowledge_base/
-        ragpreflight audit ./knowledge_base/ --profile medical
-        ragpreflight audit ./knowledge_base/ --format html --output report.html
-    """
-    from ragpreflight.corpus import audit_corpus
-    from ragpreflight.profiles import get_profile
-    from ragpreflight.report import render_corpus_report
-
-    cfg = (ctx.obj or {}).get("config", {})
-    if profile == "standard" and "profile" in cfg:
-        profile = cfg["profile"]
-    if not quiet and cfg.get("quiet"):
-        quiet = True
-    if output_format == "terminal" and "output_format" in cfg:
-        output_format = cfg["output_format"]
-
-    try:
-        profile_data = get_profile(profile)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile") from exc
-
-    try:
-        report = audit_corpus(
-            directory,
-            profile=profile_data,
-            show_progress=not no_progress,
-            parallel=not no_parallel,
-            max_workers=workers,
-            use_cache=cache,
-            detect_contradictions=contradictions,
-        )
-    except NotADirectoryError as exc:
-        raise click.ClickException(str(exc)) from exc
-    except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}") from exc
-
-    fmt = "json" if output_json else output_format
-    render_corpus_report(report, fmt=fmt, output=output, quiet=quiet)
-
-    if report.average_score < profile_data["min_document_score"] or any(
-        d.critical_issues for d in report.documents
-    ):
-        sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
-# ragpreflight chunks
-# ---------------------------------------------------------------------------
-
-
-@main.command("chunks")
-@click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
-@click.option(
-    "--strategy",
-    type=click.Choice(["recursive", "sentence", "paragraph"]),
-    default="recursive",
-    show_default=True,
-    help="Chunking strategy.",
-)
-@click.option("--size", default=512, show_default=True, help="Target chunk size in characters.")
-@click.option("--overlap", default=50, show_default=True, help="Chunk overlap in characters.")
-@click.option(
-    "--profile",
-    "-p",
-    default="standard",
-    show_default=True,
-    help="Quality profile.",
-)
-@click.option("--json", "output_json", is_flag=True, default=False, help="Output as JSON.")
-def cmd_chunks(
-    filepath: str,
-    strategy: str,
-    size: int,
-    overlap: int,
-    profile: str,
-    output_json: bool,
-) -> None:
-    """Analyse chunk quality for a document.
-
-    Requires: pip install ragpreflight[full]
-
-    \b
-    Examples:
-        ragpreflight chunks document.pdf --strategy sentence --size 512
-        ragpreflight chunks document.pdf --json
-    """
-    from ragpreflight.chunker import analyze_chunks
-    from ragpreflight.profiles import get_profile
-
-    try:
-        profile_data = get_profile(profile)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="--profile") from exc
-
-    try:
-        chunk_reports = analyze_chunks(
-            filepath,
-            chunk_size=size,
-            overlap=overlap,
-            strategy=strategy,
-            profile=profile_data,
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        raise click.ClickException(str(exc)) from exc
-    except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}") from exc
-
-    if output_json:
-        click.echo(json.dumps([r.to_dict() for r in chunk_reports], indent=2))
-        return
-
-    from rich import box
-    from rich.console import Console
-    from rich.table import Table
-
-    console = Console()
-    console.print(f"\n[bold]Chunk Analysis — {Path(filepath).name}[/bold]")
-    console.print(f"Strategy: {strategy}  ·  Size: {size}  ·  Overlap: {overlap}")
-    console.print(f"Total chunks: {len(chunk_reports)}\n")
-
-    if not chunk_reports:
-        console.print("[yellow]No chunks produced.[/yellow]")
-        return
-
-    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
-    table.add_column("#", width=5, justify="right")
-    table.add_column("Coherence", width=10)
-    table.add_column("Issues", width=7, justify="right")
-    table.add_column("Preview")
-
-    for r in chunk_reports:
-        if r.coherence_score is None:
-            coh_display = "[dim]n/a[/dim]"
+    rendered = {"json": to_json, "md": to_markdown, "html": html_for_out}.get(fmt)
+    if rendered:
+        text = rendered(report)
+        if out:
+            Path(out).write_text(text, encoding="utf-8")
+            console.print(f"Wrote {out} · {report.verdict} · {report.score}/100", highlight=False)
         else:
-            coh_colour = (
-                "green"
-                if r.coherence_score >= 0.65
-                else "yellow"
-                if r.coherence_score >= 0.4
-                else "red"
-            )
-            coh_display = f"[{coh_colour}]{r.coherence_score:.2f}[/{coh_colour}]"
-        table.add_row(
-            str(r.chunk_index),
-            coh_display,
-            str(len(r.issues)),
-            r.text_preview,
-        )
-    console.print(table)
-
-    # Print issues for problematic chunks
-    for r in chunk_reports:
-        if r.issues:
-            for issue in r.issues:
-                from ragpreflight._constants import SEVERITY_COLOURS
-
-                colour = SEVERITY_COLOURS.get(issue.severity.value, "white")
-                console.print(
-                    f"  [{colour}]{issue.severity.value.upper()}[/{colour}]  {issue.message}"
-                )
+            sys.stdout.write(text + "\n")
+    else:
+        print_terminal(report, console, show_all=show_all, elapsed=elapsed)
+        if out:
+            suffix = Path(out).suffix.lower()
+            writer = {".json": to_json, ".md": to_markdown}.get(suffix, html_for_out)
+            Path(out).write_text(writer(report), encoding="utf-8")
+            console.print(f"[dim]Report written to {out}[/dim]")
+    sev = {f.severity for f in report.findings}
+    if fail_on == "error" and Severity.ERROR in sev:
+        return 1
+    if fail_on == "warn" and sev & {Severity.ERROR, Severity.WARN}:
+        return 1
+    return 0
 
 
-# ---------------------------------------------------------------------------
-# ragpreflight simulate
-# ---------------------------------------------------------------------------
+def _chunker(spec: str) -> str:
+    """Validate --chunker and hand it to the chunk check (env var reaches worker processes too)."""
+    import os
+
+    from .chunkers import ENV, is_valid
+
+    if not is_valid(spec):
+        raise click.BadParameter("use langchain[:SIZE[:OVERLAP]], llamaindex[:SIZE[:OVERLAP]], openai, "
+                                 "tokens:SIZE[:OVERLAP], words:SIZE[:OVERLAP] or off", param_hint="--chunker")
+    os.environ[ENV] = spec.lower()
+    return spec
 
 
-@main.command("simulate")
-@click.argument("directory", type=click.Path(exists=True, file_okay=False))
-@click.option("--queries", default=7, show_default=True, help="Queries per document.")
-@click.option("--top-k", default=5, show_default=True, help="Top-k chunks to retrieve per query.")
-@click.option("--chunk-size", default=512, show_default=True, help="Chunk size in characters.")
-@click.option(
-    "--use-llm",
-    is_flag=True,
-    default=False,
-    help="Use an LLM endpoint for richer query generation.",
-)
-@click.option(
-    "--llm-endpoint",
-    default="http://localhost:11434",
-    show_default=True,
-    help="OpenAI-compatible API endpoint.",
-)
-@click.option("--llm-model", default="llama3", show_default=True, help="LLM model name.")
-@click.option("--json", "output_json", is_flag=True, default=False, help="Output as JSON.")
-def cmd_simulate(
-    directory: str,
-    queries: int,
-    top_k: int,
-    chunk_size: int,
-    use_llm: bool,
-    llm_endpoint: str,
-    llm_model: str,
-    output_json: bool,
-) -> None:
-    """Simulate retrieval over a corpus and measure chunk coverage.
+@cli.command("scan")
+@click.argument("path", default=".", type=click.Path())
+@click.option("--format", "fmt", type=click.Choice(["text", "json", "md", "html"]), default="text",
+              help="Output format. json/md/html go to stdout unless --out is given.")
+@click.option("--out", "-o", type=click.Path(), help="Also write a report file (.html, .json or .md).")
+@click.option("--fail-on", type=click.Choice(["error", "warn", "never"]), default="error",
+              show_default=True, help="Exit 1 when findings at this level exist (for CI / pre-commit).")
+@click.option("--only", help="Comma-separated checks to run: versions,extraction,chunking,pii,metadata")
+@click.option("--skip", help="Comma-separated checks to skip.")
+@click.option("--all", "show_all", is_flag=True, help="Show every finding, including notes.")
+@click.option("--chunker", default="langchain", show_default=True, metavar="SPEC", callback=lambda c, p, v: _chunker(v),
+              help="The splitter your pipeline uses, for chunk checks: langchain[:SIZE[:OVERLAP]] "
+                   "(RecursiveCharacterTextSplitter, default 4000/200 chars), llamaindex[:SIZE[:OVERLAP]] "
+                   "(SentenceSplitter, 1024/200 tokens), openai (800/400 tokens), tokens:SIZE[:OVERLAP], or off.")
+def scan_cmd(path, fmt, out, fail_on, only, skip, show_all, chunker):
+    """Scan a folder or file of documents (pdf, docx, md, txt, html)."""
+    sys.exit(_run(path, fmt, out, fail_on, only, skip, show_all, Console(highlight=False)))
 
-    Requires: pip install ragpreflight[full]
 
-    \b
-    Examples:
-        ragpreflight simulate ./knowledge_base/ --queries 50
-        ragpreflight simulate ./knowledge_base/ --use-llm --llm-endpoint http://localhost:11434
-    """
-    from ragpreflight.retrieval import simulate_retrieval
+def _run_ab(path, questions, model, top_k, out, no_open, no_answers, console):
+    import webbrowser
 
-    try:
-        result = simulate_retrieval(
-            directory,
-            queries_per_doc=queries,
-            top_k=top_k,
-            chunk_size=chunk_size,
-            use_llm=use_llm,
-            llm_endpoint=llm_endpoint,
-            llm_model=llm_model,
-        )
-    except Exception as exc:
-        raise click.ClickException(f"Unexpected error: {exc}") from exc
+    from .ab import load_questions
+    from .ab import run as ab_run
+    from .ab_html import to_ab_html
 
-    if "error" in result:
-        raise click.ClickException(result["error"])
+    qs = load_questions(questions)
+    console.print(f"Asking {len(qs)} question(s) before and after ragpreflight…")
+    r = ab_run(path, qs, model=model, top_k=top_k, with_answers=not no_answers)
+    target = Path(out) if out else Path.cwd() / "ragpreflight-before-after.html"
+    target.write_text(to_ab_html(r), encoding="utf-8")
+    for c in r.changes:
+        console.print(f"  [green]✓[/green] {c}" if fancy(console) else f"  + {c}")
+    if r.answers_note:
+        console.print(f"[yellow]Answers off:[/yellow] {r.answers_note}. The page shows what the retriever returns.")
+    console.print(f"Before/after page: {target}")
+    if not no_open:
+        webbrowser.open(target.resolve().as_uri())
 
-    if output_json:
-        click.echo(json.dumps(result, indent=2))
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--questions", "-q", type=click.Path(exists=True), help="JSON list or one question per line.")
+@click.option("--model", default="claude-opus-5-5", show_default=True, help="Claude model that answers.")
+@click.option("--top-k", default=3, show_default=True, help="Passages retrieved per question.")
+@click.option("--chunker", default="langchain", show_default=True, metavar="SPEC", callback=lambda c, p, v: _chunker(v),
+              help="Your splitter, used for the BEFORE index.")
+@click.option("--out", "-o", type=click.Path(), help="Where to write the page (default: ragpreflight-before-after.html).")
+@click.option("--no-open", is_flag=True)
+@click.option("--no-answers", is_flag=True, help="Skip calling Claude; show retrieved passages only.")
+def ab(path, questions, model, top_k, chunker, out, no_open, no_answers):
+    """Ask the same questions of your documents before and after ragpreflight's fixes."""
+    if not questions:
+        raise click.UsageError("pass --questions FILE (a JSON list, or one question per line)")
+    _run_ab(path, questions, model, top_k, out, no_open, no_answers, Console(highlight=False))
+
+
+@cli.command()
+@click.option("--keep", type=click.Path(), help="Copy the demo documents here so you can inspect them.")
+@click.option("--chat", is_flag=True, help="Also ask a support bot 5 questions before and after ragpreflight.")
+@click.option("--no-open", is_flag=True, hidden=True)
+def demo(keep, chat, no_open):
+    """Scan a small fictional airline knowledge base with real-world failures planted in it."""
+    console = Console(highlight=False)
+    src = resources.files("ragpreflight") / "demo"
+    target = Path(keep) if keep else Path(tempfile.mkdtemp(prefix="ragpreflight-demo-")) / "skyfare-air-kb"
+    target.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        if item.is_file() and not item.name.startswith(("_", ".")):
+            (target / item.name).write_bytes(item.read_bytes())
+    if chat:
+        import os
+
+        os.environ.setdefault("RAGPREFLIGHT_CHUNKER", "langchain:400:40")  # small docs: realistic chunks
+        console.print("[bold]Demo:[/bold] SkyFare Air's support bot (fictional), before and after ragpreflight.\n")
+        _run_ab(str(target), None, "claude-opus-5-5", 3, None, no_open, False, console)
         return
-
-    from rich.console import Console
-    from rich.panel import Panel
-
-    console = Console()
-    pct = lambda v: f"{v:.1%}"  # noqa: E731
-
-    console.print(
-        Panel(
-            f"[bold]Retrieval Simulation — {result['directory']}[/bold]\n\n"
-            f"Documents: {result['total_documents']}  ·  "
-            f"Chunks: {result['total_chunks']}  ·  "
-            f"Queries: {result['total_queries']}\n\n"
-            f"Similarity hit rate@{top_k}: [green]{pct(result['synthetic_retrieval_hit_rate'])}[/green] (similarity threshold, not labeled precision)\n"
-            f"Dead chunk rate:    "
-            f"[{'red' if result['dead_chunk_rate'] > 0.3 else 'yellow' if result['dead_chunk_rate'] > 0.1 else 'green'}]"
-            f"{pct(result['dead_chunk_rate'])}[/] "
-            f"({result['dead_chunks']} chunks never retrieved)\n"
-            f"Query failure rate: "
-            f"[{'red' if result['query_failure_rate'] > 0.3 else 'yellow' if result['query_failure_rate'] > 0.1 else 'green'}]"
-            f"{pct(result['query_failure_rate'])}[/] "
-            f"({result['failed_queries']} queries found no good match)",
-            expand=False,
-        )
-    )
+    console.print("[bold]Demo:[/bold] SkyFare Air's support-bot knowledge base (fictional).\n"
+                  "A customer asks: [italic]“Can I claim the bereavement fare after I fly?”[/italic]\n")
+    _run(str(target), "text", None, "never", None, None, False, console)
+    console.print(f"\n[dim]Demo files: {target}[/dim]\nNow try it on yours:  [bold]ragpreflight ./your-docs[/bold]")
+    if not keep:
+        shutil.rmtree(target.parent, ignore_errors=True)
 
 
-# ---------------------------------------------------------------------------
-# ragpreflight score
-# ---------------------------------------------------------------------------
+@cli.command()
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--out", "-o", type=click.Path(), help="Where to write the viewer (default: FILE.ragpreflight.html here).")
+@click.option("--no-open", is_flag=True, help="Don't open the viewer in a browser.")
+@click.option("--mask", is_flag=True, help="Blur PII and secret values (use when sharing the viewer).")
+@click.option("--chunker", default="langchain", show_default=True, metavar="SPEC", callback=lambda c, p, v: _chunker(v),
+              help="The splitter your pipeline uses (see `ragpreflight scan --help`).")
+def view(path, out, no_open, chunker, mask):
+    """See one PDF with every problem highlighted on its pages."""
+    import os
+    import webbrowser
 
+    from .html_viewer import to_viewer_html
 
-@main.command("score")
-@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True))
-@click.option("--min-score", default=None, type=int, help="Exit 1 if any score is below this.")
-@click.option(
-    "--profile",
-    "-p",
-    default=None,
-    help="Use profile's min_document_score as --min-score threshold.",
-)
-@click.option("--max-size", default=100.0, show_default=True, help="Max file size in MB.")
-def cmd_score(
-    paths: tuple[str, ...],
-    min_score: int | None,
-    profile: str | None,
-    max_size: float,
-) -> None:
-    """Print readiness scores (0-100) and nothing else.
-
-    Accepts one or more files or directories. For directories, prints the
-    corpus average score.
-
-    \b
-    Examples:
-        ragpreflight score document.pdf
-        ragpreflight score a.pdf b.pdf c.md
-        ragpreflight score ./knowledge_base/
-        ragpreflight score doc.pdf --min-score 60
-        ragpreflight score doc.pdf --profile strict
-    """
-    from ragpreflight.corpus import audit_corpus
-    from ragpreflight.scanner import scan_document
-
-    threshold = min_score
-    if profile is not None:
-        from ragpreflight.profiles import get_profile
-
+    console = Console(highlight=False)
+    src = Path(path)
+    report = scan(src)
+    target = Path(out) if out else Path.cwd() / f"{src.stem}.ragpreflight.html"
+    if src.suffix.lower() == ".pdf":
         try:
-            threshold = get_profile(profile)["min_document_score"]
-        except ValueError as exc:
-            raise click.BadParameter(str(exc), param_hint="--profile") from exc
+            href = Path(os.path.relpath(src.resolve(), target.resolve().parent)).as_posix()
+        except ValueError:
+            href = src.resolve().as_uri()
+        page = to_viewer_html(report, src, source_href=href, mask=mask)
+    else:
+        console.print("[dim]The page viewer is PDF-only for now; writing the standard report.[/dim]")
+        page = to_html(report, target.resolve().parent)
+    target.write_text(page, encoding="utf-8")
+    n = report.counts()
+    console.print(f"{report.verdict} · {n['error']} errors · {n['warn']} warnings · viewer: {target}")
+    if not no_open:
+        webbrowser.open(target.resolve().as_uri())
 
-    failed = False
-    for path_str in paths:
-        p = Path(path_str)
-        try:
-            if p.is_dir():
-                report = audit_corpus(path_str, show_progress=False)
-                score = round(report.average_score)
-            else:
-                doc = scan_document(path_str, max_file_size_mb=max_size)
-                score = doc.score
-        except Exception as exc:
-            raise click.ClickException(f"{p.name}: {exc}") from exc
 
-        click.echo(score)
-        if threshold is not None and score < threshold:
-            failed = True
+@cli.command()
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--max-tokens", default=8191, show_default=True,
+              help="Your embedding model's input limit (8191 OpenAI text-embedding-3; 512 for many open models).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json", "md", "html"]), default="text")
+@click.option("--out", "-o", type=click.Path(), help="Also write a report file (.html, .json or .md).")
+@click.option("--fail-on", type=click.Choice(["error", "warn", "never"]), default="error", show_default=True)
+@click.option("--all", "show_all", is_flag=True, help="Show every finding, including notes.")
+def chunks(path, max_tokens, fmt, out, fail_on, show_all):
+    """Lint the real chunks your pipeline produced (JSONL / JSON export of your index)."""
+    from .chunks_lint import lint
 
-    if failed:
+    console = Console(highlight=False)
+    t0 = time.perf_counter()
+    try:
+        report = lint(path, max_tokens=max_tokens)
+    except (ValueError, json.JSONDecodeError) as e:
+        console.print(f"[red]Could not read {path}: {e}[/red]\nExpected JSONL (one chunk per line) or a JSON array with a 'text' field.")
+        sys.exit(2)
+    rendered = {"json": to_json, "md": to_markdown, "html": lambda r: to_html(r)}.get(fmt)
+    if rendered:
+        text = rendered(report)
+        if out:
+            Path(out).write_text(text, encoding="utf-8")
+        else:
+            sys.stdout.write(text + "\n")
+    else:
+        print_terminal(report, console, show_all=show_all, elapsed=time.perf_counter() - t0)
+        if out:
+            writer = {".json": to_json, ".md": to_markdown}.get(Path(out).suffix.lower(), to_html)
+            Path(out).write_text(writer(report), encoding="utf-8")
+    sev = {f.severity for f in report.findings}
+    if (fail_on == "error" and Severity.ERROR in sev) or (fail_on == "warn" and sev & {Severity.ERROR, Severity.WARN}):
         sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# ragpreflight taxonomy
-# ---------------------------------------------------------------------------
+@cli.command()
+@click.argument("code")
+def explain(code):
+    """Explain a failure mode, e.g. F14."""
+    code = code.upper() if code.upper().startswith("F") else f"F{code}"
+    if code not in MODES:
+        raise click.BadParameter(f"{code} is not one of F1–F33")
+    stage, name, grade = MODES[code]
+    click.echo(f"{code}  {name}\nStage: {stage} · evidence: {grade}")
+    click.echo(f"Checked by ragpreflight: {COVERED.get(code, 'no (happens at query time or inside agents; use evals/tracing)')}")
+    click.echo(f"Source: Garani (2026), ACL TrustNLP · {PAPER_URL}")
 
 
-@main.group("taxonomy")
-def cmd_taxonomy() -> None:
-    """Browse the Garani 2026 RAG failure taxonomy (F1–F33).
-
-    \b
-    Examples:
-        ragpreflight taxonomy             # list all 33 modes
-        ragpreflight taxonomy F7          # detail for one mode
-        ragpreflight taxonomy --stage retrieval
-        ragpreflight coverage             # detector coverage summary
-    """
+@cli.command()
+def coverage():
+    """Which of the 33 failure modes ragpreflight checks before ingestion."""
+    console = Console(highlight=False)
+    for code, (stage, name, _grade) in MODES.items():
+        mark = ("[green]✓[/green]" if fancy(console) else "[green]+[/green]") if code in COVERED else "[dim]·[/dim]"
+        console.print(f" {mark} {code:<4} {stage:<15} {name}" + (f"  [dim]{COVERED[code].split(':')[0]}[/dim]" if code in COVERED else ""))
+    console.print(f"\n{len(COVERED)} of 33 checked before ingestion. The rest happen at query time or inside agents.")
 
 
-@cmd_taxonomy.command("list")
-@click.option("--stage", default=None, help="Filter by pipeline stage.")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
-def cmd_taxonomy_list(stage: str | None, as_json: bool) -> None:
-    """List all 33 failure modes (or filter by stage)."""
-    import json as _json
-
-    from rich.console import Console
-    from rich.table import Table
-
-    from ragpreflight.taxonomy import list_failure_modes, modes_by_stage
-
-    console = Console()
-    modes = modes_by_stage(stage) if stage else list_failure_modes()
-
-    if as_json:
-        data = [
-            {
-                "id": m.id,
-                "stage": m.stage,
-                "name": m.name,
-                "evidence_level": m.evidence_level,
-                "detector_status": m.detector_status,
-            }
-            for m in modes
-        ]
-        click.echo(_json.dumps(data, indent=2))
-        return
-
-    table = Table(title="Garani 2026 RAG Failure Taxonomy", box=None, show_header=True)
-    table.add_column("ID", style="bold cyan", width=5)
-    table.add_column("Stage", width=22)
-    table.add_column("Name", width=36)
-    table.add_column("Evidence", width=10)
-    table.add_column("Coverage", width=16)
-
-    evidence_colour = {"Strong": "green", "Moderate": "yellow", "Limited": "red"}
-    status_colour = {
-        "direct": "green",
-        "proxy": "yellow",
-        "risk_signal": "yellow",
-        "runtime_required": "dim",
-        "unsupported": "dim",
-    }
-
-    for m in modes:
-        ev_col = evidence_colour.get(m.evidence_level, "white")
-        st_col = status_colour.get(m.detector_status, "white")
-        table.add_row(
-            m.id,
-            m.stage.replace("_", " "),
-            m.name,
-            f"[{ev_col}]{m.evidence_level}[/{ev_col}]",
-            f"[{st_col}]{m.detector_status}[/{st_col}]",
-        )
-    console.print(table)
-    console.print("\n[dim]Source: Garani 2026 · doi:10.18653/v1/2026.trustnlp-main.27[/dim]")
+def main() -> None:
+    # Old Windows consoles use cp1252: never crash on a quote or arrow in a document title.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    args = sys.argv[1:]
+    if not args or args[0] not in COMMANDS:
+        sys.argv.insert(1, "scan")  # `ragpreflight ./docs` == `ragpreflight scan ./docs`
+    cli()
 
 
-@cmd_taxonomy.command("show")
-@click.argument("mode_id")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
-def cmd_taxonomy_show(mode_id: str, as_json: bool) -> None:
-    """Show full detail for one failure mode (e.g. F7)."""
-    import json as _json
-
-    from rich.console import Console
-
-    from ragpreflight.taxonomy import get_failure_mode
-
-    console = Console()
-
-    try:
-        m = get_failure_mode(mode_id)
-    except KeyError as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    if as_json:
-        click.echo(
-            _json.dumps(
-                {
-                    "id": m.id,
-                    "stage": m.stage,
-                    "name": m.name,
-                    "definition": m.definition,
-                    "observable_manifestation": m.observable_manifestation,
-                    "evidence_level": m.evidence_level,
-                    "detector_status": m.detector_status,
-                    "source": {"doi": m.source.doi, "url": m.source.url},
-                },
-                indent=2,
-            )
-        )
-        return
-
-    console.print(f"\n[bold cyan]{m.id}  {m.name}[/bold cyan]")
-    console.print(f"[dim]Stage:[/dim] {m.stage.replace('_', ' ').title()}")
-    console.print(f"[dim]Evidence:[/dim] {m.evidence_level}")
-    console.print(f"[dim]ragpreflight coverage:[/dim] {m.detector_status}")
-    console.print(f"\n[bold]Definition[/bold]\n{m.definition}")
-    console.print(f"\n[bold]Observable Manifestation[/bold]\n{m.observable_manifestation}")
-    console.print(
-        f"\n[dim]Source: {m.source.author} {m.source.year}, {m.source.venue}[/dim]"
-        f"\n[dim]doi:{m.source.doi}[/dim]"
-    )
-
-
-# ---------------------------------------------------------------------------
-# ragpreflight coverage
-# ---------------------------------------------------------------------------
-
-
-@main.command("coverage")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
-def cmd_coverage(as_json: bool) -> None:
-    """Show detector coverage across all 33 Garani 2026 failure modes.
-
-    \b
-    Examples:
-        ragpreflight coverage
-        ragpreflight coverage --json
-    """
-    import json as _json
-
-    from rich.console import Console
-
-    from ragpreflight.taxonomy import detector_coverage
-
-    console = Console()
-    cov = detector_coverage()
-
-    if as_json:
-        click.echo(
-            _json.dumps(
-                {
-                    "direct": [m.id for m in cov.direct],
-                    "proxy": [m.id for m in cov.proxy],
-                    "risk_signal": [m.id for m in cov.risk_signal],
-                    "runtime_required": [m.id for m in cov.runtime_required],
-                    "unsupported": [m.id for m in cov.unsupported],
-                    "total": cov.total,
-                },
-                indent=2,
-            )
-        )
-        return
-
-    console.print("\n[bold]ragpreflight — Taxonomy Coverage (Garani 2026)[/bold]\n")
-    console.print(
-        f"  [green]Direct assessment:[/green]  {len(cov.direct)} modes  "
-        f"({', '.join(m.id for m in cov.direct) or '—'})"
-    )
-    console.print(
-        f"  [yellow]Proxy signal:[/yellow]       {len(cov.proxy)} modes  "
-        f"({', '.join(m.id for m in cov.proxy) or '—'})"
-    )
-    console.print(
-        f"  [yellow]Risk signal only:[/yellow]   {len(cov.risk_signal)} modes  "
-        f"({', '.join(m.id for m in cov.risk_signal) or '—'})"
-    )
-    console.print(
-        f"  [dim]Runtime required:[/dim]   {len(cov.runtime_required)} modes  "
-        f"(needs live system traces)"
-    )
-    console.print(f"  [dim]Not supported:[/dim]      {len(cov.unsupported)} modes")
-    console.print(
-        f"\n  [dim]Total: {cov.total} modes | Source: doi:10.18653/v1/2026.trustnlp-main.27[/dim]"
-    )
-    console.print(
-        "\n  [dim]Saying '2 direct + 4 proxy/risk + 27 runtime/unsupported' is honest strength,[/dim]"
-        "\n  [dim]not a weakness. Run 'ragpreflight taxonomy' for full mode details.[/dim]"
-    )
+if __name__ == "__main__":
+    main()

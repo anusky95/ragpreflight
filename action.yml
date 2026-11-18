@@ -1,0 +1,44 @@
+name: "ragpreflight"
+description: "Lint your knowledge base before your AI reads it: stale versions, conflicting facts, scanned pages, risky chunk splits, PII."
+author: "Anupama Garani"
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Folder or file to scan"
+    default: "."
+  fail-on:
+    description: "Fail the job on: error | warn | never"
+    default: "error"
+  version:
+    description: "ragpreflight version to install (default: latest)"
+    default: ""
+
+outputs:
+  verdict:
+    description: "READY, REVIEW or NOT READY"
+    value: ${{ steps.scan.outputs.verdict }}
+  score:
+    description: "Readiness score 0-100"
+    value: ${{ steps.scan.outputs.score }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - shell: bash
+      run: pip install --quiet "ragpreflight${{ inputs.version && format('=={0}', inputs.version) || '' }}"
+    - id: scan
+      shell: bash
+      run: |
+        set +e
+        ragpreflight scan "${{ inputs.path }}" --format md --out ragpreflight-report.md --fail-on "${{ inputs.fail-on }}"
+        code=$?
+        cat ragpreflight-report.md >> "$GITHUB_STEP_SUMMARY"
+        ragpreflight scan "${{ inputs.path }}" --format json --out ragpreflight-report.json --fail-on never > /dev/null
+        python -c "import json;d=json.load(open('ragpreflight-report.json'));print(f\"verdict={d['verdict']}\");print(f\"score={d['score']}\")" >> "$GITHUB_OUTPUT"
+        exit $code

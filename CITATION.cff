@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite both the software and the paper below."
 type: software
 title: "ragpreflight"
-abstract: "Pre-ingestion RAG document quality audit tool grounded in the Garani 2026 systematic taxonomy of 33 RAG failure modes across 7 pipeline stages."
+abstract: "Offline lint for documents before RAG, LLM wikis or agents read them: stale versions, conflicting facts, broken extraction, risky chunk splits, PII and secrets. Grounded in the Garani 2026 taxonomy of 33 RAG failure modes."
 authors:
   - family-names: Garani
     given-names: Anupama
@@ -11,8 +11,8 @@ authors:
 repository-code: "https://github.com/anusky95/ragpreflight"
 url: "https://pypi.org/project/ragpreflight/"
 license: MIT
-version: "0.1.0"
-date-released: "2026-09-29"
+version: "0.3.0"
+date-released: "2026-11-17"
 keywords:
   - RAG
   - retrieval-augmented-generation

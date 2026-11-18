@@ -1,0 +1,8 @@
+Support escalation notes - week 22
+
+Case 48213: customer Jordan Reyes (jordan.reyes84@gmail.com, 415-555-0187) asked about a bereavement refund after travel.
+Agent promised a callback. Customer verified identity with SSN 219-09-9999 - DO NOT store this, remove after review.
+Case 48219: card on file 4111 1111 1111 1111 declined twice, customer asked us to retry.
+
+Tooling: the refund lookup script uses api_key sk-proj-Z3x9Q2mVb7Lw4Kp8Rt6Yn1Hs5Df0Gj2Ac4Ee6Ii8Oo
+Escalate unresolved cases to the duty manager.

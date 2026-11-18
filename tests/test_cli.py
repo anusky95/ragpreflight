@@ -1,148 +1,108 @@
-"""Tests for ragpreflight CLI commands."""
-
-from __future__ import annotations
-
 import json
+import subprocess
+import sys
 from pathlib import Path
 
-import pytest
-from click.testing import CliRunner
+from ragpreflight import scan
+from ragpreflight.readers import discover, read
 
-from ragpreflight.cli import main
-
-
-@pytest.fixture()
-def runner() -> CliRunner:
-    return CliRunner()
+DEMO = Path(__file__).resolve().parents[1] / "src" / "ragpreflight" / "demo"
 
 
-class TestVersion:
-    def test_version_flag(self, runner: CliRunner) -> None:
-        result = runner.invoke(main, ["--version"])
-        assert result.exit_code == 0
-        assert "ragpreflight" in result.output
-
-    def test_short_version_flag(self, runner: CliRunner) -> None:
-        result = runner.invoke(main, ["-V"])
-        assert result.exit_code == 0
+def run(*args):
+    return subprocess.run([sys.executable, "-m", "ragpreflight", *args], capture_output=True, text=True,
+                          encoding="utf-8", env={"PYTHONIOENCODING": "utf-8", "COLUMNS": "120", **__import__("os").environ})
 
 
-class TestScanCommand:
-    def test_scan_txt_succeeds(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["scan", str(sample_txt)])
-        assert result.exit_code in (0, 1)  # 1 is OK if there are critical issues
-        assert "ragpreflight" in result.output or "Score" in result.output
-
-    def test_scan_json_output(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["scan", str(sample_txt), "--json"])
-        assert result.exit_code in (0, 1)
-        data = json.loads(result.output)
-        assert "score" in data
-        assert "issues" in data
-
-    def test_scan_quiet_prints_number(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["scan", str(sample_txt), "--quiet"])
-        assert result.exit_code in (0, 1)
-        score = result.output.strip()
-        assert score.isdigit()
-        assert 0 <= int(score) <= 100
-
-    def test_scan_missing_file_gives_error(self, runner: CliRunner, tmp_path: Path) -> None:
-        result = runner.invoke(main, ["scan", str(tmp_path / "nonexistent.txt")])
-        assert result.exit_code != 0
-
-    def test_scan_invalid_profile_gives_error(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["scan", str(sample_txt), "--profile", "bogus"])
-        assert result.exit_code != 0
-
-    def test_scan_strict_profile(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["scan", str(sample_txt), "--profile", "strict"])
-        assert result.exit_code in (0, 1)
-
-    def test_scan_html_format(self, runner: CliRunner, sample_txt: Path, tmp_path: Path) -> None:
-        output_file = tmp_path / "report.html"
-        result = runner.invoke(
-            main,
-            ["scan", str(sample_txt), "--format", "html", "--output", str(output_file)],
-        )
-        assert result.exit_code in (0, 1)
-        assert output_file.exists()
-        content = output_file.read_text()
-        assert "ragpreflight" in content
-        assert "<html" in content
+def test_readers_handle_every_demo_format():
+    docs = [read(p) for p in discover(DEMO)]
+    assert {d.fmt for d in docs} == {"md", "txt", "html", "pdf", "docx"}
+    assert all(d.read_error is None for d in docs)
+    pdf = next(d for d in docs if d.fmt == "pdf")
+    assert pdf.pages[0].image_count >= 1 and len(pdf.pages[0].text.strip()) < 25
 
 
-class TestAuditCommand:
-    def test_audit_directory_succeeds(self, runner: CliRunner, fixtures_dir: Path) -> None:
-        result = runner.invoke(main, ["audit", str(fixtures_dir), "--no-progress"])
-        assert result.exit_code in (0, 1)
-
-    def test_audit_json_output(self, runner: CliRunner, fixtures_dir: Path) -> None:
-        result = runner.invoke(main, ["audit", str(fixtures_dir), "--json", "--no-progress"])
-        assert result.exit_code in (0, 1)
-        data = json.loads(result.output)
-        assert "total_documents" in data
-        assert "average_score" in data
-
-    def test_audit_empty_directory(self, runner: CliRunner, tmp_path: Path) -> None:
-        result = runner.invoke(main, ["audit", str(tmp_path), "--no-progress"])
-        assert result.exit_code in (0, 1)
-
-    def test_audit_quiet(self, runner: CliRunner, fixtures_dir: Path) -> None:
-        result = runner.invoke(main, ["audit", str(fixtures_dir), "--quiet", "--no-progress"])
-        assert result.exit_code in (0, 1)
-        score = result.output.strip()
-        assert score.isdigit()
+def test_demo_scan_catches_the_planted_failures():
+    report = scan(DEMO)
+    checks = {f.check for f in report.findings}
+    for expected in ("version-conflict", "version-stale", "extraction-scanned", "pii", "secret"):
+        assert expected in checks, expected
+    assert report.verdict == "NOT READY"
+    conflict = next(f for f in report.findings if f.check == "version-conflict")
+    assert "refund-policy" in conflict.path
 
 
-class TestScoreCommand:
-    def test_score_prints_integer(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["score", str(sample_txt)])
-        assert result.exit_code in (0, 1)
-        score = result.output.strip()
-        assert score.isdigit()
-        assert 0 <= int(score) <= 100
+def test_cli_json_and_exit_codes(tmp_path):
+    r = run(str(DEMO), "--format", "json")
+    assert r.returncode == 1, r.stderr
+    data = json.loads(r.stdout)
+    assert data["verdict"] == "NOT READY" and data["findings"]
 
-    def test_score_empty_file_prints_zero(self, runner: CliRunner, empty_txt: Path) -> None:
-        result = runner.invoke(main, ["score", str(empty_txt)])
-        assert result.output.strip() == "0"
-
-    def test_score_missing_file_gives_error(self, runner: CliRunner, tmp_path: Path) -> None:
-        result = runner.invoke(main, ["score", str(tmp_path / "missing.txt")])
-        assert result.exit_code != 0
+    clean = tmp_path / "kb"
+    clean.mkdir()
+    (clean / "a.md").write_text("---\nowner: Docs team\nupdated: 2026-01-10\n---\n# Hello\n\n" + "Plain helpful text. " * 40)
+    r = run(str(clean))
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
-class TestChunksCommand:
-    def test_chunks_produces_output(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["chunks", str(sample_txt)])
-        assert result.exit_code in (0, 1)
-
-    def test_chunks_json_output(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["chunks", str(sample_txt), "--json"])
-        assert result.exit_code in (0, 1)
-        data = json.loads(result.output)
-        assert isinstance(data, list)
-        if data:
-            assert "chunk_index" in data[0]
-            assert "coherence_score" in data[0]
-
-    def test_chunks_sentence_strategy(self, runner: CliRunner, sample_txt: Path) -> None:
-        result = runner.invoke(main, ["chunks", str(sample_txt), "--strategy", "sentence"])
-        assert result.exit_code in (0, 1)
+def test_cli_bare_path_and_html_report(tmp_path):
+    out = tmp_path / "r.html"
+    r = run(str(DEMO), "--out", str(out), "--fail-on", "never")
+    assert r.returncode == 0
+    assert "<html" in out.read_text(encoding="utf-8")
 
 
-class TestHelpOutput:
-    def test_main_help(self, runner: CliRunner) -> None:
-        result = runner.invoke(main, ["--help"])
-        assert result.exit_code == 0
-        assert "scan" in result.output
-        assert "audit" in result.output
+def test_unreadable_and_missing_paths(tmp_path):
+    (tmp_path / "broken.pdf").write_bytes(b"%PDF-1.4 garbage")
+    report = scan(tmp_path)
+    assert any(f.check == "unreadable" for f in report.findings)
+    assert run(str(tmp_path / "nope")).returncode == 2
 
-    def test_scan_help(self, runner: CliRunner) -> None:
-        result = runner.invoke(main, ["scan", "--help"])
-        assert result.exit_code == 0
-        assert "--profile" in result.output
 
-    def test_audit_help(self, runner: CliRunner) -> None:
-        result = runner.invoke(main, ["audit", "--help"])
-        assert result.exit_code == 0
+def test_explain_and_coverage():
+    assert "Conflicting" in run("explain", "F14").stdout
+    assert "of 33 checked" in run("coverage").stdout
+
+
+def test_html_links_every_finding_and_document_to_its_source(tmp_path):
+    from ragpreflight.report import to_html
+
+    report = scan(DEMO)
+    page = to_html(report, link_base=DEMO)
+    assert 'href="baggage-claim-form-scanned.pdf#page=1"' in page  # PDF opens at the flagged page
+    assert 'href="refund-policy-2024.md"' in page  # related file of a conflict
+    assert page.count("<tr>") == len(report.documents) + 1  # one row per scanned file + header
+    absolute = to_html(report)
+    assert "file:///" in absolute
+
+
+def test_view_writes_a_page_viewer_with_highlights(tmp_path):
+    out = tmp_path / "v.html"
+    r = run("view", str(DEMO / "baggage-claim-form-scanned.pdf"), "-o", str(out), "--no-open")
+    assert r.returncode == 0, r.stderr
+    page = out.read_text(encoding="utf-8")
+    assert "data:image/" in page and '"kind": "scanned"' in page
+    assert "No text layer" in page
+
+
+def test_view_shows_values_unless_masked(tmp_path):
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    (kb / "notes.txt").write_text("call 415-555-0187")
+    # non-PDF falls back to the report; PII values stay masked there
+    r = run("view", str(kb / "notes.txt"), "-o", str(tmp_path / "v.html"), "--no-open")
+    assert r.returncode == 0 and "415-555-0187" not in (tmp_path / "v.html").read_text(encoding="utf-8")
+
+
+def test_chunks_lints_a_real_index_export(tmp_path):
+    rows = [
+        {"text": "Refund policy\n\nBereavement fares are offered to immediate family members", "metadata": {"source": "policy.pdf", "page": 3}, "chunk_index": 0},
+        {"text": "except when the ticket was bought with miles. Call 415-555-0187 for help.", "metadata": {"source": "policy.pdf", "page": 3}, "chunk_index": 1},
+        {"text": "Bags are free.", "chunk_index": 2},
+    ]
+    f = tmp_path / "export.jsonl"
+    f.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    r = run("chunks", str(f), "--format", "json", "--fail-on", "never")
+    assert r.returncode == 0, r.stderr
+    checks = {x["check"] for x in json.loads(r.stdout)["findings"]}
+    assert {"chunk-split", "pii", "chunk-no-source"} <= checks

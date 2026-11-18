@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-17
+
+Complete rewrite. Same name, sharper job: lint the documents an AI system will read, before it reads them.
+
+### Added
+- `ragpreflight PATH` — one command, zero config; works with `uvx`/`pipx run`.
+- **Version checks:** families of document versions, stale older copies, exact duplicates, period twins (e.g. yearly reports), and **conflicting statements across versions** (numbers and negations that disagree).
+- **Extraction checks:** empty/unreadable files, scanned pages with no text layer, garbled text (tuned to ignore math and code), image-heavy pages, table-heavy content.
+- **Chunk checks:** qualifiers split from their clause, orphaned headings, tables split across a chunk boundary.
+- **PII & secrets:** emails, phones, SSNs, Luhn-valid card numbers, API keys, private keys; role mailboxes ignored; samples masked.
+- **Metadata checks:** missing dates/owners (summarised at corpus level), placeholder metadata, very old documents. Reads YAML frontmatter (LLM-wiki / OKF style).
+- `ragpreflight demo`, `explain`, `coverage`; JSON, Markdown and HTML reports; GitHub Action; pre-commit hook; Agent Skill.
+- `ragpreflight view FILE.pdf`: an offline page viewer that draws each problem on the PDF itself. Conflicts are underlined, PII and secrets are highlighted with their real values (`--mask` blurs them for sharing), chunk cuts are marked with ✂, tables are outlined, and scanned pages are veiled.
+- HTML report: findings grouped by who fixes them, a network of document versions, a page heatmap, and links to the source file at the exact page.
+- Every finding gives page and line. PII, secret, conflict and chunk findings quote the exact (masked) text.
+- Chunk checks run the splitters production stacks use. The default is LangChain `RecursiveCharacterTextSplitter` with its shipped defaults (4000 chars, 200 overlap), using the library when it is installed, otherwise a bundled port tested to match it exactly. `--chunker llamaindex|openai|langchain:SIZE:OVERLAP|tokens:SIZE:OVERLAP|off`.
+- `ragpreflight chunks export.jsonl`: lint the real chunks from your index (no re-chunking).
+- `ragpreflight ab ./docs -q questions.json` and `ragpreflight demo --chat`: the same questions before and after ragpreflight's fixes, side by side. Retrieval is BM25; answers come from Claude when credentials are available.
+
+### Changed
+- Findings lead; the 0–100 score is a per-document average and secondary. Verdict: READY / REVIEW / NOT READY.
+- Dependencies cut to click, rich, pypdfium2 (fast PDF text, Apache/BSD), pypdf (fallback) and python-docx. No AGPL PDF library.
+- Files are read in parallel processes, with a progress bar on large folders.
+
+### Removed
+- v0.2 commands (`audit`, `score`, `chunks`, `simulate`, `taxonomy`), profiles, PPTX/XLSX/CSV/IPYNB/SRT readers, SARIF output, and the LangChain/LlamaIndex loaders. Open an issue if you relied on one.
+
+
 ## [0.2.2] — 2026-10-07
 
 ### Changed
