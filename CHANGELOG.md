@@ -24,6 +24,7 @@ Complete rewrite. Same name, sharper job: lint the documents an AI system will r
 - Every finding gives page and line. PII, secret, conflict and chunk findings quote the exact (masked) text.
 - Chunk checks run the splitters production stacks use. The default is LangChain `RecursiveCharacterTextSplitter` with its shipped defaults (4000 chars, 200 overlap), using the library when it is installed, otherwise a bundled port tested to match it exactly. `--chunker llamaindex|openai|langchain:SIZE:OVERLAP|tokens:SIZE:OVERLAP|off`.
 - `ragpreflight chunks export.jsonl`: lint the real chunks from your index (no re-chunking).
+- `ragpreflight view FILE.pdf -q questions.txt`: the page viewer plus an 'Ask the bot' panel with the same questions answered before and after the reported fixes, each linked to its source page; `--mask` also hides credential values in the answers.
 - `ragpreflight ab ./docs -q questions.json` and `ragpreflight demo --chat`: the same questions before and after ragpreflight's fixes, side by side. Retrieval is BM25; answers come from Claude when credentials are available.
 
 ### Changed

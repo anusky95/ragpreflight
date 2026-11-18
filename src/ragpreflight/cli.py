@@ -187,7 +187,10 @@ def demo(keep, chat, no_open):
 @click.option("--mask", is_flag=True, help="Blur PII and secret values (use when sharing the viewer).")
 @click.option("--chunker", default="langchain", show_default=True, metavar="SPEC", callback=lambda c, p, v: _chunker(v),
               help="The splitter your pipeline uses (see `ragpreflight scan --help`).")
-def view(path, out, no_open, chunker, mask):
+@click.option("--questions", "-q", type=click.Path(exists=True),
+              help="Also ask a bot these questions about the file, before vs after ragpreflight's fixes.")
+@click.option("--model", default="claude-opus-5-5", show_default=True, help="Claude model for --questions.")
+def view(path, out, no_open, chunker, mask, questions, model):
     """See one PDF with every problem highlighted on its pages."""
     import os
     import webbrowser
@@ -197,13 +200,23 @@ def view(path, out, no_open, chunker, mask):
     console = Console(highlight=False)
     src = Path(path)
     report = scan(src)
+    ab_result = None
+    if questions:
+        from .ab import load_questions
+        from .ab import run as ab_run
+
+        qs = load_questions(questions)
+        console.print(f"Asking {len(qs)} question(s) about {src.name}, before and after ragpreflight…")
+        ab_result = ab_run(src, qs, model=model)
+        if ab_result.answers_note:
+            console.print(f"[yellow]Answers off:[/yellow] {ab_result.answers_note}")
     target = Path(out) if out else Path.cwd() / f"{src.stem}.ragpreflight.html"
     if src.suffix.lower() == ".pdf":
         try:
             href = Path(os.path.relpath(src.resolve(), target.resolve().parent)).as_posix()
         except ValueError:
             href = src.resolve().as_uri()
-        page = to_viewer_html(report, src, source_href=href, mask=mask)
+        page = to_viewer_html(report, src, source_href=href, mask=mask, ab=ab_result)
     else:
         console.print("[dim]The page viewer is PDF-only for now; writing the standard report.[/dim]")
         page = to_html(report, target.resolve().parent)

@@ -106,3 +106,10 @@ def test_chunks_lints_a_real_index_export(tmp_path):
     assert r.returncode == 0, r.stderr
     checks = {x["check"] for x in json.loads(r.stdout)["findings"]}
     assert {"chunk-split", "pii", "chunk-no-source"} <= checks
+
+
+def test_mask_hides_secret_values_in_bot_answers():
+    from ragpreflight.html_viewer import _mask_answer
+
+    out = _mask_answer("Use login pgebrand and the password onepge.", ["onepge"])
+    assert "onepge" not in out and "[REDACTED]" in out

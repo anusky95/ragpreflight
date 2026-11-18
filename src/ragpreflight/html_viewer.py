@@ -299,8 +299,82 @@ def _occurrence_list(fid: int, marks: list[dict], e) -> str:
     return f"<ol class='occ'>{''.join(rows)}{more}</ol>"
 
 
-def to_viewer_html(report: Report, pdf_path: Path, source_href: str = "", mask: bool = False) -> str:
-    """mask=False shows PII/secret values on the page (local dev use); mask=True blurs them."""
+def _md_inline(e, text: str) -> str:
+    """Escape, then render **bold** and line breaks from a model answer."""
+    t = e(text)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    return t.replace("\n", "<br>")
+
+
+def _secret_values(ab) -> list[str]:
+    """Every credential / sensitive value in the scanned documents (the bare value, e.g. the
+    password itself, not the 'Password:' label), longest first."""
+    from .checks import pii
+
+    vals: set[str] = set()
+    for d in ab.report.documents:
+        for kind, m in pii.find_all(d.text or ""):
+            if kind in ("email address", "phone number"):
+                continue
+            v = m.group(0)
+            if kind == "Password in text":
+                v = re.split(r"[:=]\s*", v, maxsplit=1)[-1]
+            if len(v) >= 4:
+                vals.add(v)
+    return sorted(vals, key=len, reverse=True)
+
+
+def _mask_answer(ans: str, secret_values: list[str]) -> str:
+    """Hide credential values however the model phrased them ('the password onepge')."""
+    from .ab import _redact
+
+    ans = _redact(ans, contacts=False)[0]
+    for v in secret_values:
+        ans = re.sub(re.escape(v), "[REDACTED]", ans, flags=re.I)
+    return ans
+
+
+def _bot_section(ab, geos: dict, e, mask: bool = False) -> str:
+    """'Ask the bot' cards: the same question answered before and after ragpreflight's fixes,
+    each linked to the page its top passage came from."""
+    if ab is None or not ab.questions:
+        return ""
+
+    def page_of(chunk_text: str) -> int | None:
+        body = re.sub(r"^\[Source:[^\]]*\]\s*", "", chunk_text)
+        snippet = " ".join(body.split()[:12])
+        for no, g in geos.items():
+            if g.find(snippet):
+                return no
+        return None
+
+    secret_values = _secret_values(ab) if mask else []
+    cards = []
+    for i, q in enumerate(ab.questions):
+        sides = []
+        for label, side, cls in (("Before ragpreflight", ab.before, "b"), ("After ragpreflight", ab.after, "a")):
+            ans = side.answers[i] if i < len(side.answers) else ""
+            hits = side.retrieved[i] if i < len(side.retrieved) else []
+            page = page_of(hits[0][0].text) if hits else None
+            ev = (f"<a class='ev' href='#p{page}' onclick='event.stopPropagation()'>top passage: p.{page} →</a>"
+                  if page else "")
+            if ans and mask:
+                ans = _mask_answer(ans, secret_values)
+            body = _md_inline(e, ans) if ans else f"<span class='sub'>{e(ab.answers_note or 'no answer')}</span>"
+            sides.append(f"<div class='side {cls}'><div class='lab'>{label}</div><div class='txt'>{body}</div>{ev}</div>")
+        cards.append(f"<div class='qa'><div class='q'>“{e(q)}”</div>{''.join(sides)}</div>")
+    fixes = "".join(f"<li>{e(c)}</li>" for c in ab.changes)
+    return (f"<section class='bot' style='--c:#3d8bd9'><h3><span class='dot'></span>Ask the bot "
+            f"<span class='cnt'>same question, before vs after</span></h3>"
+            f"<div class='sub how'>RAG over this file: {e(ab.chunker)}, BM25 top-3, answered by {e(ab.model)}. "
+            f"Before = the file as-is. After = only the fixes ragpreflight reported:</div><ul class='fx'>{fixes}</ul>"
+            f"{''.join(cards)}</section>")
+
+
+def to_viewer_html(report: Report, pdf_path: Path, source_href: str = "", mask: bool = False,
+                   ab=None) -> str:
+    """mask=False shows PII/secret values on the page (local dev use); mask=True blurs them.
+    `ab` (a ragpreflight.ab.ABResult for this file) adds the 'Ask the bot' before/after panel."""
     import pypdfium2 as pdfium
 
     from .report import tag
@@ -319,6 +393,7 @@ def to_viewer_html(report: Report, pdf_path: Path, source_href: str = "", mask: 
             m["fid"] = k
             flagged.add(m["page"])
         items.append({"k": k, "f": f, "marks": marks})
+    bot_html = _bot_section(ab, geos, html.escape, mask)
     full = set(sorted(flagged)[:MAX_FULL_PAGES])
     pages = []
     for i in range(n_pages):
@@ -371,7 +446,7 @@ def to_viewer_html(report: Report, pdf_path: Path, source_href: str = "", mask: 
 <div class="file">{e(Path(pdf_path).name)} <span class="sub">· {n_pages} pages · {doc.word_count:,} words {src_link}</span></div>
 <div class="kpi"><b class="v-{vclass}">{e(report.verdict)}</b> <span class="sub">{report.score}/100 · {n['error']} errors · {n['warn']} warnings · {n['info']} notes</span></div></header>
 <nav class="strip" title="Pages: highlighted ones have problems">{strip}</nav>
-<div class="wrap"><aside>{''.join(finding_cards) or '<p>No issues found.</p>'}
+<div class="wrap"><aside>{bot_html}{''.join(finding_cards) or '<p>No issues found.</p>'}
 <p class="sub foot">F-codes: failure modes from <a href="{PAPER_URL}">Garani (2026)</a>. Highlights come from the PDF's own character positions.</p></aside>
 <main id="pages">{page_divs}</main></div>
 <div id="tip"></div>
@@ -395,6 +470,13 @@ def _page_color(no: int, items) -> str:
 
 
 VCSS = """
+.bot{margin-bottom:10px}.bot .how{margin:2px 0 4px}.bot .fx{margin:0 0 8px;padding-left:18px;font-size:12px;color:var(--muted)}
+.qa{background:var(--card);border-radius:12px;padding:10px 11px;margin:8px 0;border:1px solid var(--line)}
+.qa .q{font-weight:600;font-size:13.5px;margin-bottom:6px}
+.side{border-radius:8px;padding:7px 9px;margin:5px 0;font-size:13px;background:var(--bg);border-left:4px solid var(--line)}
+.side.b{border-left-color:#d64527}.side.a{border-left-color:#1f8a6e}
+.side .lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}
+.side.b .lab{color:#d64527}.side.a .lab{color:#1f8a6e}.side .ev{display:inline-block;margin-top:4px;font:12px ui-monospace,Consolas,monospace;color:var(--muted)}
 :root{--ink:#14213d;--muted:#66728f;--line:#e3e8f0;--card:#fff;--bg:#eef1f6;--red:#d64527;--amber:#c48a12;--green:#1f8a6e}
 @media (prefers-color-scheme:dark){:root{--ink:#e8ecf4;--muted:#98a3bd;--line:#26314a;--card:#161f35;--bg:#0b1120}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
